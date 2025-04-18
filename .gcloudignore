@@ -1,0 +1,16 @@
+# 一般的に不要なファイル／ディレクトリ
+*.pyc
+*.log
+__pycache__/
+
+# Git管理情報は不要
+.git
+.gitignore
+
+.json
+.html
+
+# 除外しないよう注意！（←コメントアウト or 削除）
+!app/login.txt
+!app/token.json
+!app/credentials.json
