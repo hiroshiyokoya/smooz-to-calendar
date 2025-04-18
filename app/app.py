@@ -1,5 +1,6 @@
 # app/app.py
 
+import os
 from flask import Flask, request
 from fetch_reservations import fetch_reservations
 from calendar_sync import sync_calendar
@@ -22,3 +23,9 @@ def run():
 @app.route("/", methods=["GET"])
 def health_check():
     return "Smooz fetcher is running.", 200
+
+@app.route("/files", methods=["GET"])
+def list_files():
+    files = os.listdir(".")  # カレントディレクトリ
+    all_files = "\n".join(files)
+    return f"📂 /app/src の中身:\n{all_files}", 200
