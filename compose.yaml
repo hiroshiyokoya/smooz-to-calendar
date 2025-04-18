@@ -3,7 +3,7 @@ services:
     build: .
     container_name: smooz-fetcher
     volumes:
-      - ./src:/app/src
+      - ./app:/app/src
     dns:
       - 8.8.8.8
 
