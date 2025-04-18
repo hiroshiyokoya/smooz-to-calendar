@@ -42,14 +42,17 @@
 ## ディレクトリ構成（例）
 
 ```
+Dockerfile           # アプリ実行用のDocker設定
+compose.yaml         # smooz-fetcherサービスの定義（ボリュームマウント含む）
+requirements.txt     # Python依存パッケージ一覧
+
 app/
-├―― main.py           # Flaskエントリーポイント（Cloud Run用）
-├―― your_script.py    # Smooz→Calendar 登録ロジック
-├―― login.txt         # Smooz認証情報（Git管理しないこと）
-├―― credentials.json  # Google API認証情報（OAuthクライアントID）
-├―― token.json        # OAuth認証トークン（初回実行時に作成）
-├―― requirements.txt  # Python依存パッケージ一覧
-└―― Dockerfile        # Cloud Run 用のDockerfile
+├── main.py              # Flaskエントリーポイント（Cloud Run用）
+├── fetch_reservations.py  # Smooz予約の取得処理
+├── calendar_sync.py     # Googleカレンダーへの登録処理
+├── login.txt            # Smoozログイン情報（メール＋パスワード）
+├── credentials.json     # Google API認証情報（OAuthクライアントID）
+├── token.json           # GoogleのOAuthトークン（初回認証で生成）
 ```
 
 ---
