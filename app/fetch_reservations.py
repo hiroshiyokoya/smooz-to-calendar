@@ -15,6 +15,11 @@ from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from selenium.webdriver.support.ui import Select
 from bs4 import BeautifulSoup
 
+import os
+
+USERNAME = os.environ["SMOOZ_USER"]
+PASSWORD = os.environ["SMOOZ_PASS"]
+
 def safe_text(el):
     return el.get_text(strip=True) if el else ""
 
@@ -46,9 +51,9 @@ def is_recent_month(value):
         return False
 
 def fetch_reservations():
-    with open("login.txt", "r") as f:
-        USERNAME = f.readline().strip()
-        PASSWORD = f.readline().strip()
+    # with open("login.txt", "r") as f:
+    #     USERNAME = f.readline().strip()
+    #     PASSWORD = f.readline().strip()
 
     options = Options()
     options.binary_location = "/usr/bin/chromium"

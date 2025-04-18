@@ -12,9 +12,6 @@ ENV CHROME_BIN=/usr/bin/chromium
 COPY requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
-COPY app/ /app/src/
-# COPY app/login.txt /app/src/login.txt
-
 # 作業ディレクトリ設定
 WORKDIR /app/src
 
