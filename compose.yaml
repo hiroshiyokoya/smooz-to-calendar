@@ -1,0 +1,16 @@
+services:
+  smooz-fetcher:
+    build: .
+    container_name: smooz-fetcher
+    volumes:
+      - ./src:/app/src
+    dns:
+      - 8.8.8.8
+
+# services:
+#   smooz-fetcher:
+#     build: .
+#     container_name: smooz-fetcher
+#     dns:
+#       - 8.8.8.8
+#     restart: "no"
