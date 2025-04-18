@@ -7,8 +7,8 @@ __pycache__/
 .git
 .gitignore
 
-.json
-.html
+*.json
+*.html
 
 # 除外しないよう注意！（←コメントアウト or 削除）
 !app/login.txt
