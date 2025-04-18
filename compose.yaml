@@ -6,11 +6,6 @@ services:
       - ./app:/app/src
     dns:
       - 8.8.8.8
+    ports:
+      - "8080:8080"
 
-# services:
-#   smooz-fetcher:
-#     build: .
-#     container_name: smooz-fetcher
-#     dns:
-#       - 8.8.8.8
-#     restart: "no"
