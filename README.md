@@ -88,10 +88,10 @@ gcloud run services add-iam-policy-binding smooz-runner \
   --role="roles/run.invoker"
 ```
 
-### 5. Cloud Scheduler ジョブを作成（10分ごとにPOST）
+### 5. Cloud Scheduler ジョブを作成（15分ごとにPOST）
 ```bash
 gcloud scheduler jobs create http smooz-schedule \
-  --schedule "*/10 * * * *" \
+  --schedule "*/15 * * * *" \
   --uri https://[CLOUD_RUN_URL]/run \
   --http-method POST \
   --oidc-service-account-email cloud-run-invoker@$(gcloud config get-value project).iam.gserviceaccount.com \
