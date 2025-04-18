@@ -108,7 +108,7 @@ def create_events_from_json(service, calendar_id='primary', debug=False):
             }
 
             created = service.events().insert(calendarId=calendar_id, body=event).execute()
-            print(f"✅ 登録完了: {title} → {created.get('htmlLink')}")
+            print(f"✅ 登録完了: {title}")
             if debug:
                 print("🧪 デバッグモードなので、1件だけ登録して終了します。")
                 break
