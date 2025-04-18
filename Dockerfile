@@ -18,7 +18,7 @@ WORKDIR /app/src
 # スクリプトとログインファイルを後からマウントするのでCOPYは不要
 
 # 実行
-CMD ["python", "script.py"]
+CMD ["python", "main.py"]
 
 # FROM python:3.10-slim
 
