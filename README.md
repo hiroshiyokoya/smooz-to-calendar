@@ -42,18 +42,64 @@
 ## ディレクトリ構成（例）
 
 ```
-Dockerfile           # アプリ実行用のDocker設定
-compose.yaml         # smooz-fetcherサービスの定義（ボリュームマウント含む）
+Dockerfile           # 本番用Docker設定（Cloud Run向け）
+Dockerfile.dev       # 開発用Docker設定（compose.yamlで使用）
+compose.yaml         # ローカル開発用Docker Compose構成
 requirements.txt     # Python依存パッケージ一覧
 
 app/
-├── main.py              # Flaskエントリーポイント（Cloud Run用）
+├── app.py               # Flaskエントリーポイント（Cloud Run用）
+├── main.py              # ローカル実行用（デバッグ時）
 ├── fetch_reservations.py  # Smooz予約の取得処理
 ├── calendar_sync.py     # Googleカレンダーへの登録処理
 ├── login.txt            # Smoozログイン情報（メール＋パスワード）
 ├── credentials.json     # Google API認証情報（OAuthクライアントID）
 ├── token.json           # GoogleのOAuthトークン（初回認証で生成）
 ```
+
+---
+
+## Cloud Run デプロイ手順（本番環境）
+
+### 1. 必要なAPIを有効化
+```bash
+gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com cloudscheduler.googleapis.com
+```
+
+### 2. イメージをビルドしてGCPにpush
+```bash
+gcloud builds submit --tag gcr.io/$(gcloud config get-value project)/smooz-runner
+```
+
+### 3. Cloud Run にデプロイ（1GiBメモリ、認証あり）
+```bash
+gcloud run deploy smooz-runner \
+  --image gcr.io/$(gcloud config get-value project)/smooz-runner \
+  --platform managed \
+  --region asia-northeast1 \
+  --memory 1Gi
+```
+
+### 4. Cloud Run に呼び出し権限を付与（Schedulerからアクセスさせる）
+```bash
+gcloud run services add-iam-policy-binding smooz-runner \
+  --region asia-northeast1 \
+  --member="serviceAccount:cloud-run-invoker@$(gcloud config get-value project).iam.gserviceaccount.com" \
+  --role="roles/run.invoker"
+```
+
+### 5. Cloud Scheduler ジョブを作成（10分ごとにPOST）
+```bash
+gcloud scheduler jobs create http smooz-schedule \
+  --schedule "*/10 * * * *" \
+  --uri https://[CLOUD_RUN_URL]/run \
+  --http-method POST \
+  --oidc-service-account-email cloud-run-invoker@$(gcloud config get-value project).iam.gserviceaccount.com \
+  --location asia-northeast1 \
+  --time-zone "Asia/Tokyo"
+```
+
+> `CLOUD_RUN_URL` は `gcloud run services describe smooz-runner --region asia-northeast1 --format="value(status.url)"` で確認
 
 ---
 
@@ -69,8 +115,28 @@ token.json
 
 ---
 
+## .gcloudignore の注意点
+
+Cloud Build (`gcloud builds submit`) を使ってデプロイする際、`.gcloudignore` が存在しない場合は `.gitignore` が自動的に使用されます。
+そのため、以下のように `.gcloudignore` を明示的に作成して、`token.json` や `credentials.json` を**除外しないように明示的に含める**必要があります：
+
+### 推奨 `.gcloudignore` 設定例
+```
+# 除外したいもの
+*.pyc
+__pycache__/
+*.log
+.git
+
+# 明示的に含める
+!app/login.txt
+!app/token.json
+!app/credentials.json
+```
+
+---
+
 ## ライセンス
 
 MIT License
-```
 

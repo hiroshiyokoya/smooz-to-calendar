@@ -1,4 +1,5 @@
 # calendar_sync.py
+
 import os
 import sys
 import json
@@ -9,7 +10,6 @@ from googleapiclient.discovery import build
 from google.auth.transport.requests import Request
 
 SCOPES = ['https://www.googleapis.com/auth/calendar']
-
 ALLOWED_STATUSES = {"購入済", "運休払戻済", "乗車変更購入済"}
 
 def authorize_google_calendar():
@@ -70,9 +70,13 @@ def delete_events_in_months(service, calendar_id, target_months):
             break
     print(f"✅ {count} 件のイベントを削除しました。")
 
-def create_events_from_json(service, calendar_id='primary', debug=False):
-    with open("reservations.json", "r", encoding="utf-8") as f:
-        reservations = json.load(f)
+def sync_calendar(reservations, debug=False, clear=True):
+    service = authorize_google_calendar()
+    calendar_id = get_calendar_id_by_name(service, name="Smooz")
+
+    if clear:
+        target_months = extract_target_year_months(reservations)
+        delete_events_in_months(service, calendar_id, target_months)
 
     for i, r in enumerate(reservations):
         if r.get("ステータス") not in ALLOWED_STATUSES:
@@ -107,26 +111,25 @@ def create_events_from_json(service, calendar_id='primary', debug=False):
                 'end': {'dateTime': end.isoformat(), 'timeZone': 'Asia/Tokyo'}
             }
 
-            created = service.events().insert(calendarId=calendar_id, body=event).execute()
-            print(f"✅ 登録完了: {title}")
+            print(json.dumps(event, ensure_ascii=False, indent=2))
+            try:
+                created = service.events().insert(calendarId=calendar_id, body=event).execute()
+                print(f"✅ 登録完了: {title}")
+            except Exception as e:
+                print(f"❌ イベント登録失敗: {e}")
+
             if debug:
                 print("🧪 デバッグモードなので、1件だけ登録して終了します。")
                 break
         except Exception as e:
             print(f"⚠️ スキップされた予約があります: {e}")
 
+# CLI 用（手動実行など）
 if __name__ == "__main__":
     debug_mode = "--debug" in sys.argv
     clear_mode = "--clear" in sys.argv
 
-    service = authorize_google_calendar()
-    calendar_id = get_calendar_id_by_name(service, name="Smooz")
-
     with open("reservations.json", "r", encoding="utf-8") as f:
         reservations = json.load(f)
 
-    if clear_mode:
-        target_months = extract_target_year_months(reservations)
-        delete_events_in_months(service, calendar_id, target_months)
-
-    create_events_from_json(service, calendar_id=calendar_id, debug=debug_mode)
+    sync_calendar(reservations, debug=debug_mode, clear=clear_mode)
