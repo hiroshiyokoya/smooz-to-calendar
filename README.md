@@ -143,7 +143,7 @@ function resetLastThreadId() {
 ### 使用方法
 
 1. 上記スクリプトを Google Apps Script に貼り付け
-2. トリガーとして `checkSmoozMail` を 2分おきに設定
+2. トリガーとして `checkSmoozMail` を 1分おき(または、5分おき)に設定
 3. `YOUR_CLOUD_RUN_URL` を実際の Cloud Run エンドポイントに置換
 4. 初回は `resetLastThreadId()` を実行しておくとスムーズです
 
