@@ -4,27 +4,64 @@ from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 
-# 使用するスコープ：Googleカレンダー編集
+# 定数
 SCOPES = ['https://www.googleapis.com/auth/calendar']
+TOKEN_FILE = 'token.json'
+CREDENTIALS_FILE = 'credentials.json'
+
+def load_credentials():
+    """token.json が存在する場合は、そこから認証情報を読み込む。
+
+    Returns:
+        google.oauth2.credentials.Credentials: 認証情報。token.json が存在しない場合は None。
+    """
+    if os.path.exists(TOKEN_FILE):
+        return Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
+    return None
+
+def authorize():
+    """Google Calendar APIへの認証を実行する。
+
+    Returns:
+        google.oauth2.credentials.Credentials: 認証情報。
+
+    Raises:
+        FileNotFoundError: credentials.json が見つからない場合に発生。
+        Exception: 認証処理中にエラーが発生した場合に発生。
+    """
+    try:
+        if not os.path.exists(CREDENTIALS_FILE):
+          raise FileNotFoundError(f"'{CREDENTIALS_FILE}' が見つかりません。")
+
+        flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_FILE, SCOPES)
+        return flow.run_local_server(port=0, open_browser=False)
+    except FileNotFoundError as e:
+      raise FileNotFoundError(f"{e}")
+    except Exception as e:
+        raise Exception(f"認証中にエラーが発生しました: {e}")
+
+def save_credentials(creds):
+    """認証情報を token.json に保存する。
+
+    Args:
+        creds (google.oauth2.credentials.Credentials): 認証情報。
+    """
+    try:
+        with open(TOKEN_FILE, 'w') as token:
+            token.write(creds.to_json())
+    except Exception as e:
+        raise Exception(f"認証情報の保存中にエラーが発生しました: {e}")
+    print(f"✅ 認証完了！'{TOKEN_FILE}' を保存しました。")
 
 def main():
-    creds = None
+    """Google Calendar API の認証を行うメイン処理。"""
+    creds = load_credentials()
 
-    # すでにtoken.jsonがある場合は再利用
-    if os.path.exists('token.json'):
-        creds = Credentials.from_authorized_user_file('token.json', SCOPES)
-
-    # 認証がなければ新しく取得
+    # token.json がないか、認証情報が無効な場合は、新しく認証を行う
     if not creds or not creds.valid:
-        flow = InstalledAppFlow.from_client_secrets_file('credentials.json', SCOPES)
-        # creds = flow.run_local_server(port=0)
-        creds = flow.run_local_server(port=0, open_browser=False)
+      creds = authorize()
 
-        # 認証トークンを保存
-        with open('token.json', 'w') as token:
-            token.write(creds.to_json())
-
-    print("✅ 認証完了！token.json を保存しました。")
+    save_credentials(creds)
 
 if __name__ == '__main__':
     main()
