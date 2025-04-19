@@ -46,15 +46,23 @@ Dockerfile           # 本番用Docker設定（Cloud Run向け）
 Dockerfile.dev       # 開発用Docker設定（compose.yamlで使用）
 compose.yaml         # ローカル開発用Docker Compose構成
 requirements.txt     # Python依存パッケージ一覧
+.gcloudignore        # Cloud Build用の除外設定
+.gitignore           # Git用の除外設定
+LICENSE              # MITライセンス
 
 app/
 ├── app.py               # Flaskエントリーポイント（Cloud Run用）
 ├── main.py              # ローカル実行用（デバッグ時）
 ├── fetch_reservations.py  # Smooz予約の取得処理
 ├── calendar_sync.py     # Googleカレンダーへの登録処理
+├── authorize_once.py    # Google OAuth認証用スクリプト
+├── __init__.py         # Pythonパッケージ定義
 ├── login.txt            # Smoozログイン情報（メール＋パスワード）
 ├── credentials.json     # Google API認証情報（OAuthクライアントID）
 ├── token.json           # GoogleのOAuthトークン（初回認証で生成）
+
+gas/
+└── main.gs              # Gmailトリガー用のGoogle Apps Script
 ```
 
 ---
