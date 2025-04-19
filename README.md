@@ -101,6 +101,54 @@ gcloud scheduler jobs create http smooz-schedule \
 
 > `CLOUD_RUN_URL` は `gcloud run services describe smooz-runner --region asia-northeast1 --format="value(status.url)"` で確認
 
+
+## Gmail通知をトリガーとした自動実行（イベント駆動）
+
+Cloud Scheduler による定期実行とは別に、Gmail に Smooz から通知メールが届いたタイミングで Cloud Run を自動実行する構成も利用できます。これにより、無駄なリクエストを減らしつつ、変更があった場合にすばやく予約情報を反映できます。
+
+### 仕組み概要
+
+- Gmail の受信トリガーを Apps Script（GAS）で定期実行
+- 件名に `【チケットレスサービス「Smooz」】` を含む新着メールを検知
+- Cloud Run 上の `/fetch_and_update` エンドポイントを呼び出し、予約情報を再取得・同期
+
+### GAS スクリプト例（`gas/main.gs`）
+
+```
+function checkSmoozMail() {
+  const labelName = "Smooz";
+  const label = GmailApp.getUserLabelByName(labelName) || GmailApp.createLabel(labelName);
+
+  const threads = GmailApp.search('from:info@smooz.jp subject:【チケットレスサービス「Smooz」】 -label:' + labelName);
+  if (threads.length === 0) return;
+
+  const latestThread = threads[0];
+  const alreadyProcessed = PropertiesService.getScriptProperties().getProperty("lastThreadId");
+  if (alreadyProcessed === latestThread.getId().toString()) return;
+
+  UrlFetchApp.fetch("https://YOUR_CLOUD_RUN_URL/fetch_and_update", {
+    method: "post",
+    muteHttpExceptions: true
+  });
+
+  PropertiesService.getScriptProperties().setProperty("lastThreadId", latestThread.getId());
+  threads.forEach(thread => thread.addLabel(label));
+}
+
+function resetLastThreadId() {
+  PropertiesService.getScriptProperties().deleteProperty("lastThreadId");
+}
+```
+
+### 使用方法
+
+1. 上記スクリプトを Google Apps Script に貼り付け
+2. トリガーとして `checkSmoozMail` を 1分おき(または、5分おき)に設定
+3. `YOUR_CLOUD_RUN_URL` を実際の Cloud Run エンドポイントに置換
+4. 初回は `resetLastThreadId()` を実行しておくとスムーズです
+
+> 補足：Cloud Run のエンドポイントは `--allow-unauthenticated` オプション付きでデプロイする必要があります。
+
 ---
 
 ## .gitignore 例
