@@ -85,7 +85,8 @@ gcloud run deploy smooz-runner \
   --image gcr.io/$(gcloud config get-value project)/smooz-runner \
   --platform managed \
   --region asia-northeast1 \
-  --memory 1Gi
+  --memory 1Gi \
+  --allow-unauthenticated
 ```
 
 ### 4. Cloud Run に呼び出し権限を付与（Schedulerからアクセスさせる）
