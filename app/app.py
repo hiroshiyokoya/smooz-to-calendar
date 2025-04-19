@@ -7,6 +7,10 @@ from calendar_sync import sync_calendar
 
 app = Flask(__name__)
 
+@app.route("/", methods=["GET"])
+def health_check():
+    return "Smooz fetcher is running.", 200
+
 @app.route("/run", methods=["POST"])
 def run():
     try:
@@ -20,9 +24,18 @@ def run():
         print(f"❌ エラー発生: {e}")
         return f"Error: {str(e)}", 500
 
-@app.route("/", methods=["GET"])
-def health_check():
-    return "Smooz fetcher is running.", 200
+@app.route("/fetch_and_update", methods=["POST"])
+def fetch_and_update():
+    try:
+        print("📩 Gmailトリガーによる実行")
+        reservations = fetch_reservations()
+        print(f"📝 取得した予約数: {len(reservations)} 件")
+        sync_calendar(reservations, debug=False)
+        print("✅ Gmailトリガー処理完了")
+        return "Triggered by Gmail", 200
+    except Exception as e:
+        print(f"❌ Gmailトリガー中にエラー発生: {e}")
+        return f"Error: {str(e)}", 500
 
 @app.route("/files", methods=["GET"])
 def list_files():
