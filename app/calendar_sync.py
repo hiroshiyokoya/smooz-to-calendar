@@ -25,19 +25,17 @@ def authorize_google_calendar():
         googleapiclient.discovery.Resource: Google Calendar APIのサービスオブジェクト。
 
     Raises:
-        RuntimeError: token.json が存在しない場合に発生。
+        RuntimeError: service_account.json が存在しない場合に発生。
         Exception: Google Calendar API の認証に失敗した場合に発生。
     """
-    if not os.path.exists(TOKEN_FILE):
-        raise RuntimeError(f"{TOKEN_FILE} が見つかりません。認証を先に実行してください。")
-
     try:
-        creds = Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
-        if creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        return build('calendar', 'v3', credentials=creds)
+        from authorize_once import get_calendar_service, send_error_notification
+        return get_calendar_service()
     except Exception as e:
-        raise Exception(f"Google Calendar API の認証に失敗しました: {e}")
+        error_message = f"Google Calendar API の認証に失敗しました: {e}"
+        # エラー通知を送信（必要に応じてコメントアウト）
+        # send_error_notification(error_message, "your-email@example.com")
+        raise Exception(error_message)
 
 def get_calendar_id_by_name(service, name=CALENDAR_NAME):
     """指定された名前のカレンダーのIDを取得する。
@@ -178,13 +176,19 @@ def sync_calendar(reservations, debug=False, clear=True):
                 print(f"✅ 登録完了: {event['summary']}")
                 print(f"  -> 登録されたイベントのURL: {created.get('htmlLink')}")
             except Exception as e:
-                print(f"❌ イベント登録失敗: {e}")
+                error_message = f"❌ イベント登録失敗: {e}"
+                print(error_message)
+                # 送信先メールアドレスを設定
+                send_error_notification(error_message, "your-email@example.com")
 
             if debug:
                 print("🧪 デバッグモードなので、1件だけ登録して終了します。")
                 break
     except Exception as e:
-        print(f"⚠️ 同期中にエラーが発生しました。{e}")
+        error_message = f"⚠️ 同期中にエラーが発生しました。{e}"
+        print(error_message)
+        # 送信先メールアドレスを設定
+        send_error_notification(error_message, "your-email@example.com")
 
 # CLI 用（手動実行など）
 if __name__ == "__main__":
