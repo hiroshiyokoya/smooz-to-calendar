@@ -20,7 +20,7 @@
 ---
 
 ### `credentials.json`
-- Google Calendar API の認証情報。
+- Google Calendar API と Gmail API の認証情報。
 - Google Cloud Console から **OAuth 2.0クライアントID** を作成してダウンロードしたファイルです。
 
 #### 取得手順：
@@ -30,12 +30,20 @@
 4. アプリケーションの種類：**デスクトップアプリ**
 5. ダウンロードして `credentials.json` という名前で保存
 
+#### 必要なAPIの有効化：
+1. Google Calendar API
+2. Gmail API
+
+- ⚠️ セキュリティのため、Gitには絶対にコミットしないように `.gitignore` に追加してください。
+
 ---
 
 ### `token.json`
 - 初回のOAuth認証後に自動生成されるファイルです。
 - `credentials.json` を使って一度ローカルでスクリプトを実行すると作成されます。
-- 認証トークンとして、Google Calendar API へのアクセスに使用されます。
+- 認証トークンとして、Google Calendar API と Gmail API へのアクセスに使用されます。
+
+- ⚠️ セキュリティのため、Gitには絶対にコミットしないように `.gitignore` に追加してください。
 
 ---
 
@@ -46,15 +54,23 @@ Dockerfile           # 本番用Docker設定（Cloud Run向け）
 Dockerfile.dev       # 開発用Docker設定（compose.yamlで使用）
 compose.yaml         # ローカル開発用Docker Compose構成
 requirements.txt     # Python依存パッケージ一覧
+.gcloudignore        # Cloud Build用の除外設定
+.gitignore           # Git用の除外設定
+LICENSE              # MITライセンス
 
 app/
 ├── app.py               # Flaskエントリーポイント（Cloud Run用）
 ├── main.py              # ローカル実行用（デバッグ時）
 ├── fetch_reservations.py  # Smooz予約の取得処理
 ├── calendar_sync.py     # Googleカレンダーへの登録処理
+├── authorize_once.py    # Google OAuth認証用スクリプト
+├── __init__.py         # Pythonパッケージ定義
 ├── login.txt            # Smoozログイン情報（メール＋パスワード）
 ├── credentials.json     # Google API認証情報（OAuthクライアントID）
 ├── token.json           # GoogleのOAuthトークン（初回認証で生成）
+
+gas/
+└── main.gs              # Gmailトリガー用のGoogle Apps Script
 ```
 
 ---
@@ -63,7 +79,7 @@ app/
 
 ### 1. 必要なAPIを有効化
 ```bash
-gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com cloudscheduler.googleapis.com
+gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com
 ```
 
 ### 2. イメージをビルドしてGCPにpush
@@ -77,43 +93,44 @@ gcloud run deploy smooz-runner \
   --image gcr.io/$(gcloud config get-value project)/smooz-runner \
   --platform managed \
   --region asia-northeast1 \
-  --memory 1Gi
+  --memory 1Gi \
+  --allow-unauthenticated
 ```
 
-### 4. Cloud Run に呼び出し権限を付与（Schedulerからアクセスさせる）
+---
+
+## エラー通知の設定
+
+エラーが発生した場合、Gmailで通知が送信されます。通知先のメールアドレスは `app/authorize_once.py` の `NOTIFICATION_EMAIL` 変数で設定できます。
+
+### 通知が送信されるケース：
+1. Google Calendar APIの認証エラー
+2. カレンダー同期処理のエラー
+3. イベント登録の失敗
+
+### 通知の設定方法：
+1. `app/authorize_once.py` を開く
+2. `NOTIFICATION_EMAIL` 変数を設定
+   ```python
+   NOTIFICATION_EMAIL = 'your-email@example.com'  # 通知先メールアドレス
+   ```
+3. 初回認証を実行
 ```bash
-gcloud run services add-iam-policy-binding smooz-runner \
-  --region asia-northeast1 \
-  --member="serviceAccount:cloud-run-invoker@$(gcloud config get-value project).iam.gserviceaccount.com" \
-  --role="roles/run.invoker"
-```
+   python app/authorize_once.py
+   ```
 
-### 5. Cloud Scheduler ジョブを作成（15分ごとにPOST）
-```bash
-gcloud scheduler jobs create http smooz-schedule \
-  --schedule "*/15 * * * *" \
-  --uri https://[CLOUD_RUN_URL]/run \
-  --http-method POST \
-  --oidc-service-account-email cloud-run-invoker@$(gcloud config get-value project).iam.gserviceaccount.com \
-  --location asia-northeast1 \
-  --time-zone "Asia/Tokyo"
-```
-
-> `CLOUD_RUN_URL` は `gcloud run services describe smooz-runner --region asia-northeast1 --format="value(status.url)"` で確認
-
+---
 
 ## Gmail通知をトリガーとした自動実行（イベント駆動）
 
-Cloud Scheduler による定期実行とは別に、Gmail に Smooz から通知メールが届いたタイミングで Cloud Run を自動実行する構成も利用できます。これにより、無駄なリクエストを減らしつつ、変更があった場合にすばやく予約情報を反映できます。
+Gmail に Smooz から通知メールが届いたタイミングで Cloud Run を自動実行する構成を利用できます。これにより、無駄なリクエストを減らしつつ、変更があった場合にすばやく予約情報を反映できます。
 
 ### 仕組み概要
-
 - Gmail の受信トリガーを Apps Script（GAS）で定期実行
 - 件名に `【チケットレスサービス「Smooz」】` を含む新着メールを検知
 - Cloud Run 上の `/fetch_and_update` エンドポイントを呼び出し、予約情報を再取得・同期
 
 ### GAS スクリプト例（`gas/main.gs`）
-
 ```
 function checkSmoozMail() {
   const labelName = "Smooz";
@@ -141,7 +158,6 @@ function resetLastThreadId() {
 ```
 
 ### 使用方法
-
 1. 上記スクリプトを Google Apps Script に貼り付け
 2. トリガーとして `checkSmoozMail` を 1分おき(または、5分おき)に設定
 3. `YOUR_CLOUD_RUN_URL` を実際の Cloud Run エンドポイントに置換
@@ -151,36 +167,36 @@ function resetLastThreadId() {
 
 ---
 
-## .gitignore 例
+## ローカルでの実行方法
 
-以下のように `.gitignore` に記載して、機密情報をGitに含めないようにしてください：
-
+### 1. 依存パッケージのインストール
+```bash
+pip install -r requirements.txt
 ```
-login.txt
-credentials.json
-token.json
+
+### 2. 初回認証の実行
+```bash
+python app/authorize_once.py
+```
+
+### 3. スクリプトの実行
+```bash
+python app/main.py
+```
+
+### デバッグモードでの実行
+```bash
+python app/main.py --debug
 ```
 
 ---
 
-## .gcloudignore の注意点
+## 注意事項
 
-Cloud Build (`gcloud builds submit`) を使ってデプロイする際、`.gcloudignore` が存在しない場合は `.gitignore` が自動的に使用されます。
-そのため、以下のように `.gcloudignore` を明示的に作成して、`token.json` や `credentials.json` を**除外しないように明示的に含める**必要があります：
-
-### 推奨 `.gcloudignore` 設定例
-```
-# 除外したいもの
-*.pyc
-__pycache__/
-*.log
-.git
-
-# 明示的に含める
-!app/login.txt
-!app/token.json
-!app/credentials.json
-```
+- `login.txt`、`credentials.json`、`token.json` は機密情報を含むため、**Gitにコミットしないでください**。
+- 初回認証時はブラウザが開き、Googleアカウントでの認証が必要です。
+- 認証トークンは自動的に更新されますが、長期間使用しない場合は再認証が必要になる場合があります。
+- エラー通知はGmailで送信されます。通知先のメールアドレスは適切に設定してください。
 
 ---
 

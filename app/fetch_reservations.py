@@ -14,6 +14,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException, WebDriverException
 from bs4 import BeautifulSoup
 import os
+from pytz import timezone
 
 # 定数
 SMOOZ_LOGIN_URL = "https://www.smooz.jp/Smooz/login.xhtml"
@@ -147,7 +148,8 @@ def parse_datetime(date_str, time_str):
     date = re.sub(r"[年月日（）]", "-", date_str).strip("-").split("-")[0:3]
     date_str_clean = "-".join(date)
     time = re.sub(r"[^\d:]", "", time_str)
-    return datetime.strptime(f"{date_str_clean} {time}", "%Y-%m-%d %H:%M")
+    dt = datetime.strptime(f"{date_str_clean} {time}", "%Y-%m-%d %H:%M")
+    return timezone('Asia/Tokyo').localize(dt)
 
 def fetch_reservations_by_month(driver, month):
     """
