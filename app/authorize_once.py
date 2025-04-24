@@ -4,8 +4,6 @@ from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
-from email.mime.text import MIMEText
-import base64
 
 # 定数
 SCOPES = [
@@ -14,7 +12,6 @@ SCOPES = [
 ]
 TOKEN_FILE = 'token.json'
 CREDENTIALS_FILE = 'credentials.json'
-NOTIFICATION_EMAIL = 'hyokoya@gmail.com'  # エラー通知の送信先メールアドレス
 
 def load_credentials():
     """token.json が存在する場合は、そこから認証情報を読み込む。
@@ -59,40 +56,6 @@ def save_credentials(creds):
     except Exception as e:
         raise Exception(f"認証情報の保存中にエラーが発生しました: {e}")
     print(f"✅ 認証完了！'{TOKEN_FILE}' を保存しました。")
-
-def send_error_notification(error_message):
-    """エラーメッセージをGmailで送信する。
-
-    Args:
-        error_message (str): 送信するエラーメッセージ。
-    """
-    try:
-        creds = load_credentials()
-        if not creds or not creds.valid:
-            if creds and creds.expired and creds.refresh_token:
-                creds.refresh(Request())
-            else:
-                creds = authorize()
-                save_credentials(creds)
-
-        service = build('gmail', 'v1', credentials=creds)
-
-        # メールの作成
-        message = MIMEText(error_message)
-        message['to'] = NOTIFICATION_EMAIL
-        message['from'] = creds.token_response.get('email', 'noreply@example.com')
-        message['subject'] = 'カレンダー同期エラー通知'
-
-        # メールの送信
-        raw_message = base64.urlsafe_b64encode(message.as_bytes()).decode()
-        service.users().messages().send(
-            userId='me',
-            body={'raw': raw_message}
-        ).execute()
-
-        print(f"✅ エラー通知を送信しました: {NOTIFICATION_EMAIL}")
-    except Exception as e:
-        print(f"❌ エラー通知の送信に失敗しました: {e}")
 
 def main():
     """Google Calendar API の認証を行うメイン処理。"""
