@@ -19,7 +19,10 @@ const Config = {
   SMOOZ_MAIL_QUERY: "from:info@smooz.jp subject:【チケットレスサービス「Smooz」】 -label:",
 
   // API設定
-  CLOUD_RUN_URL: "https://YOUR_CLOUD_RUN_URL/fetch_and_update" // 実際のURLに置換してください
+  CLOUD_RUN_URL: "https://YOUR_CLOUD_RUN_URL/fetch_and_update", // 実際のURLに置換してください
+
+  // デバッグ設定
+  DEBUG_MODE: false // デバッグ時は true に設定
 };
 
 /**
@@ -38,7 +41,7 @@ function getSmoozLabel() {
  * @return {GoogleAppsScript.Gmail.GmailThread|null} 最新のSmoozメールスレッド。存在しない場合は null。
  */
 function getLatestThread() {
-  const threads = GmailApp.search(Config.SMOOZ_MAIL_QUERY + Config.LABEL_NAME);
+  const threads = GmailApp.search(Config.SMOOZ_MAIL_QUERY + "-label:" + Config.LABEL_NAME);
   return threads.length > 0 ? threads[0] : null;
 }
 
@@ -49,6 +52,11 @@ function getLatestThread() {
  * @return {boolean} 処理済みであれば true、未処理であれば false
  */
 function isAlreadyProcessed(thread) {
+  // デバッグモードの場合は常に未処理として扱う
+  if (Config.DEBUG_MODE) {
+    return false;
+  }
+
   const lastThreadId = PropertiesService.getScriptProperties().getProperty(Config.PROPERTY_LAST_THREAD_ID);
   const lastProcessedTime = PropertiesService.getScriptProperties().getProperty(Config.PROPERTY_LAST_PROCESSED_TIME);
 
@@ -101,9 +109,15 @@ function checkSmoozMail() {
       method: "post",
       muteHttpExceptions: true
     });
-    console.log("正常に実行されました:" + response.getContentText());
+
+    const responseText = response.getContentText();
+    if (response.getResponseCode() === 200) {
+      console.log("Cloud Run の処理が正常に完了しました");
+    } else {
+      console.error("Cloud Run でエラーが発生しました:", responseText);
+    }
   } catch (e) {
-    console.error("実行中にエラーが発生しました:", e);
+    console.error("Cloud Run へのリクエスト中にエラーが発生しました:", e.toString());
   }
 
   updateLastThreadId(latestThread);
