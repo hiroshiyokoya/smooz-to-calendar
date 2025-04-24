@@ -10,6 +10,7 @@ from googleapiclient.discovery import build
 from google.auth.transport.requests import Request
 from fetch_reservations import parse_datetime #修正
 from pytz import timezone
+from authorize_once import send_error_notification
 
 # 定数
 TOKEN_FILE = 'token.json'
@@ -179,7 +180,7 @@ def sync_calendar(reservations, debug=False, clear=True):
                 error_message = f"❌ イベント登録失敗: {e}"
                 print(error_message)
                 # 送信先メールアドレスを設定
-                send_error_notification(error_message, "your-email@example.com")
+                send_error_notification(error_message)
 
             if debug:
                 print("🧪 デバッグモードなので、1件だけ登録して終了します。")
@@ -188,7 +189,7 @@ def sync_calendar(reservations, debug=False, clear=True):
         error_message = f"⚠️ 同期中にエラーが発生しました。{e}"
         print(error_message)
         # 送信先メールアドレスを設定
-        send_error_notification(error_message, "your-email@example.com")
+        send_error_notification(error_message)
 
 # CLI 用（手動実行など）
 if __name__ == "__main__":
