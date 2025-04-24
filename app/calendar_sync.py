@@ -10,6 +10,9 @@ from googleapiclient.discovery import build
 from google.auth.transport.requests import Request
 from fetch_reservations import parse_datetime #修正
 from pytz import timezone
+from authorize_once import load_credentials, authorize, save_credentials
+from email.mime.text import MIMEText
+import base64
 
 # 定数
 TOKEN_FILE = 'token.json'
@@ -17,6 +20,41 @@ CALENDAR_NAME = "Smooz"
 SCOPES = ['https://www.googleapis.com/auth/calendar']
 ALLOWED_STATUSES = {"購入済", "運休払戻済", "乗車変更購入済"}
 JST = timezone('Asia/Tokyo')
+NOTIFICATION_EMAIL = 'hyokoya@gmail.com'  # エラー通知の送信先メールアドレス
+
+def send_error_notification(error_message):
+    """エラーメッセージをGmailで送信する。
+
+    Args:
+        error_message (str): 送信するエラーメッセージ。
+    """
+    try:
+        creds = load_credentials()
+        if not creds or not creds.valid:
+            if creds and creds.expired and creds.refresh_token:
+                creds.refresh(Request())
+            else:
+                creds = authorize()
+                save_credentials(creds)
+
+        service = build('gmail', 'v1', credentials=creds)
+
+        # メールの作成
+        message = MIMEText(error_message)
+        message['to'] = NOTIFICATION_EMAIL
+        message['from'] = creds.token_response.get('email', 'noreply@example.com')
+        message['subject'] = 'カレンダー同期エラー通知'
+
+        # メールの送信
+        raw_message = base64.urlsafe_b64encode(message.as_bytes()).decode()
+        service.users().messages().send(
+            userId='me',
+            body={'raw': raw_message}
+        ).execute()
+
+        print(f"✅ エラー通知を送信しました: {NOTIFICATION_EMAIL}")
+    except Exception as e:
+        print(f"❌ エラー通知の送信に失敗しました: {e}")
 
 def authorize_google_calendar():
     """Google Calendar APIへのアクセスを認証する。
@@ -29,12 +67,17 @@ def authorize_google_calendar():
         Exception: Google Calendar API の認証に失敗した場合に発生。
     """
     try:
-        from authorize_once import get_calendar_service, send_error_notification
-        return get_calendar_service()
+        creds = load_credentials()
+        if not creds or not creds.valid:
+            if creds and creds.expired and creds.refresh_token:
+                creds.refresh(Request())
+            else:
+                creds = authorize()
+                save_credentials(creds)
+        return build('calendar', 'v3', credentials=creds)
     except Exception as e:
         error_message = f"Google Calendar API の認証に失敗しました: {e}"
-        # エラー通知を送信（必要に応じてコメントアウト）
-        # send_error_notification(error_message, "your-email@example.com")
+        send_error_notification(error_message)
         raise Exception(error_message)
 
 def get_calendar_id_by_name(service, name=CALENDAR_NAME):
@@ -179,7 +222,7 @@ def sync_calendar(reservations, debug=False, clear=True):
                 error_message = f"❌ イベント登録失敗: {e}"
                 print(error_message)
                 # 送信先メールアドレスを設定
-                send_error_notification(error_message, "your-email@example.com")
+                send_error_notification(error_message)
 
             if debug:
                 print("🧪 デバッグモードなので、1件だけ登録して終了します。")
@@ -188,7 +231,7 @@ def sync_calendar(reservations, debug=False, clear=True):
         error_message = f"⚠️ 同期中にエラーが発生しました。{e}"
         print(error_message)
         # 送信先メールアドレスを設定
-        send_error_notification(error_message, "your-email@example.com")
+        send_error_notification(error_message)
 
 # CLI 用（手動実行など）
 if __name__ == "__main__":
