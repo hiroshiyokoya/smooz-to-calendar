@@ -34,5 +34,18 @@ gcloud run deploy ${SERVICE_NAME} \
   --allow-unauthenticated \
   --set-env-vars="PYTHONUNBUFFERED=1"
 
+# 古いイメージを削除
+echo "🧹 古いイメージを削除します..."
+# latestタグ以外のイメージを削除
+gcloud container images list-tags ${IMAGE_NAME} \
+  --filter="NOT tags:latest" \
+  --format="get(digest)" | \
+  while read digest; do
+    if [ ! -z "$digest" ]; then
+      echo "  削除: ${IMAGE_NAME}@${digest}"
+      gcloud container images delete "${IMAGE_NAME}@${digest}" --quiet
+    fi
+  done
+
 echo "✅ デプロイが完了しました！"
 echo "🌐 サービスのURL: $(gcloud run services describe ${SERVICE_NAME} --region ${REGION} --format 'value(status.url)')"
