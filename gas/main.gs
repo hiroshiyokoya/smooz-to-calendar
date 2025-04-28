@@ -104,8 +104,7 @@ function checkSmoozMail() {
     const lastRunDate = new Date(parseInt(lastRunTime));
     const now = new Date();
     const hoursSinceLastRun = (now - lastRunDate) / (1000 * 60 * 60);
-    console.log("最終実行日時:", lastRunDate.toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" }));
-    console.log(`最終Cloud Run実行から${Math.floor(hoursSinceLastRun)}時間${Math.floor((hoursSinceLastRun % 1) * 60)}分経過`);
+    console.log(`最終Cloud Run実行日時(${lastRunDate.toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" })})から${Math.floor(hoursSinceLastRun)}時間${Math.floor((hoursSinceLastRun % 1) * 60)}分経過`);
   } else {
     console.log("Cloud Runの実行履歴がありません。初回実行時刻をセットします");
     PropertiesService.getScriptProperties().setProperty("lastCloudRunTime", new Date().getTime().toString());
