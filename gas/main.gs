@@ -15,7 +15,10 @@ const Config = {
   SMOOZ_MAIL_QUERY: "from:info@smooz.jp subject:【チケットレスサービス「Smooz」】",
 
   // API設定
-  CLOUD_RUN_URL: "https://YOUR_CLOUD_RUN_URL/fetch_and_update" // 実際のURLに置換してください
+  CLOUD_RUN_URL: "https://YOUR_CLOUD_RUN_URL/fetch_and_update", // 実際のURLに置換してください
+
+  // 実行間隔設定
+  FORCE_RUN_INTERVAL_HOURS: 3 // 強制実行までの時間間隔（時間）
 };
 
 /**
@@ -102,6 +105,8 @@ function checkSmoozMail() {
     const now = new Date();
     const hoursSinceLastRun = (now - lastRunDate) / (1000 * 60 * 60);
     console.log(`最終Cloud Run実行から${Math.floor(hoursSinceLastRun)}時間${Math.floor((hoursSinceLastRun % 1) * 60)}分経過`);
+    console.log("最終実行日時:", lastRunDate.toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" }));
+    console.log("現在日時:", now.toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" }));
   } else {
     console.log("Cloud Runの実行履歴がありません。初回実行時刻をセットします");
     PropertiesService.getScriptProperties().setProperty("lastCloudRunTime", new Date().getTime().toString());
@@ -141,7 +146,7 @@ function checkSmoozMail() {
     const now = new Date();
     const hoursSinceLastRun = (now - lastRunDate) / (1000 * 60 * 60);
 
-    if (hoursSinceLastRun >= 24) {
+    if (hoursSinceLastRun >= Config.FORCE_RUN_INTERVAL_HOURS) {
       console.log(`\nCloud Runの最終実行から${Math.floor(hoursSinceLastRun)}時間が経過しています。強制的に実行します。`);
       isForceRun = true;
     }

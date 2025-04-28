@@ -99,6 +99,35 @@ gas/
     python app/authorize_once.py
     ```
 
+## GASトリガー設定
+
+Gmailの新着メールを監視し、Smoozからのメールを検出した際に自動的に処理を実行します。
+
+### トリガーの種類
+1. メール検出トリガー
+   - Smoozからの新着メールを検出した場合に実行
+   - 処理完了後、メールに"Smooz"ラベルを付与
+
+2. 強制実行トリガー
+   - 最後の実行から一定時間（デフォルト: 24時間）経過した場合に強制的に実行
+   - メールの有無に関わらず実行される
+   - 実行間隔は`FORCE_RUN_INTERVAL_HOURS`で設定可能
+
+### 設定方法
+1. Google Apps Scriptの管理画面で `gas/main.gs` を開く
+2. トリガーを設定
+   - 関数: `checkSmoozMail`
+   - イベントのソース: 時間主導型
+   - 時間ベースのトリガーのタイプ: 分ベースのタイマー
+   - 監視間隔: 1分、5分など、お好みで
+
+### 設定値のカスタマイズ
+`gas/main.gs` の `Config` オブジェクトで以下の設定を変更できます：
+- `LABEL_NAME`: Smoozメールに付与するラベル名
+- `SMOOZ_MAIL_QUERY`: Smoozメールを検出するためのGmail検索クエリ
+- `CLOUD_RUN_URL`: Cloud RunのエンドポイントURL
+- `FORCE_RUN_INTERVAL_HOURS`: 強制実行までの時間間隔（時間）
+
 ---
 
 ## Gmail通知をトリガーとした自動実行（イベント駆動）
