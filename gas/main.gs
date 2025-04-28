@@ -140,7 +140,7 @@ function checkSmoozMail() {
     }
   }
 
-  // 3. 24時間以上Cloud Runを呼んでいない場合は強制的に呼び出す
+  // 3. Config.FORCE_RUN_INTERVAL_HOURS時間以上Cloud Runを呼んでいない場合は強制的に呼び出す
   if (lastRunTime) {
     const lastRunDate = new Date(parseInt(lastRunTime));
     const now = new Date();
@@ -154,7 +154,7 @@ function checkSmoozMail() {
 
   // 処理対象がある場合または強制実行の場合にCloud Runを実行
   if (targetThreads.length > 0 || isForceRun) {
-    console.log(`\n${isForceRun ? "24時間経過を検知" : targetThreads.length + "件のスレッドの更新を検知"}`);
+    console.log(`\n${isForceRun ? `${Config.FORCE_RUN_INTERVAL_HOURS}時間経過を検知` : targetThreads.length + "件のスレッドの更新を検知"}`);
 
     try {
       console.log("\nCloud Run へのリクエストを送信...");
