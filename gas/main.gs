@@ -130,8 +130,8 @@ function checkSmoozMail() {
     const lastMessage = messages[messages.length - 1];
     const lastMessageDate = lastMessage.getDate();
 
-    // 最後のメッセージが最後の処理時間より新しい場合のみ処理対象に追加
-    if (lastMessageDate > new Date(new Date().getTime() - 3600000)) {
+    // 最後のメッセージが最後のCloud Run実行時間より新しい場合のみ処理対象に追加
+    if (lastRunTime && lastMessageDate > new Date(parseInt(lastRunTime))) {
       console.log("\n更新されたスレッドを検出:");
       console.log(getThreadInfo(thread));
       targetThreads.push(thread);
