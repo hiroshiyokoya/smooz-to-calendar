@@ -293,6 +293,7 @@ def fetch_reservations():
             select = Select(select_element)
             months = [option.get_attribute("value") for option in select.options if option.get_attribute("value") != "today"]
             months = [m for m in months if is_recent_month(m)]
+            print(f"📅 対象月: {months}")
 
             all_reservations = []
             for month in months:
@@ -302,9 +303,12 @@ def fetch_reservations():
             return all_reservations
 
         except (ValueError, TimeoutException, WebDriverException) as e:
+            print(f"❌ エラー発生 ({retry + 1}/{RETRY_COUNT}): {e}")
             if retry < RETRY_COUNT - 1:
+                print("🔄 リトライします...")
                 time.sleep(SLEEP_TIME)
             else:
+                print("❌ リトライ回数を超えたため、処理を終了します")
                 return None
 
         finally:
