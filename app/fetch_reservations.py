@@ -68,8 +68,26 @@ def normalize_text(v):
     return v
 
 def normalize_reservation(reservation):
-    """予約情報を正規化する。"""
-    return {k: normalize_text(v) for k, v in reservation.items()}
+    """予約情報を正規化する。
+
+    Args:
+        reservation (dict): 正規化する予約情報。
+
+    Returns:
+        dict: 正規化された予約情報。
+    """
+    normalized = {}
+    for key, value in reservation.items():
+        if isinstance(value, str):
+            # 全角カッコを半角に変換
+            value = value.replace("（", "(").replace("）", ")")
+            # スペースを削除
+            value = value.replace(" ", "").replace("\u00A0", "")
+        elif isinstance(value, list):
+            # リストの各要素に対して正規化を適用
+            value = [v.replace("（", "(").replace("）", ")").replace(" ", "").replace("\u00A0", "") if isinstance(v, str) else v for v in value]
+        normalized[key] = value
+    return normalized
 
 def is_recent_month(value):
     """指定された値が直近の月かどうかを判定する。"""
@@ -123,7 +141,7 @@ def extract_reservation_details(block):
         dict: 抽出された予約詳細情報を含む辞書。
     """
     reservation = {
-        "ステータス": "",
+        "ステータス": [],
         "購入番号": safe_text(block.select_one('.contentItem')),
         "購入日時": safe_text(block.select_one('.catgory.item .value')),
         "乗車日": safe_text(block.select_one('.detailsArea .item:nth-of-type(1) .value')),
@@ -131,8 +149,8 @@ def extract_reservation_details(block):
         "人数（大人）": safe_text(block.select_one('.detailsArea .item:nth-of-type(4) .value')),
         "人数（小児）": safe_text(block.select_one('.detailsArea .item:nth-of-type(5) .value')),
         "金額": safe_text(block.select_one('.detailsArea .item:nth-of-type(6) .value')),
-        "号車": "",
-        "座席": ""
+        "号車": [],
+        "座席": []
     }
 
     stations = block.select('.detailsArea .item:nth-of-type(3) .station')
@@ -141,6 +159,14 @@ def extract_reservation_details(block):
         reservation["出発時刻"] = safe_text(stations[0].select_one('.time'))
         reservation["到着駅"] = safe_text(stations[1].select_one('.stationName'))
         reservation["到着時刻"] = safe_text(stations[1].select_one('.time'))
+
+    print(f"\n🔍 予約情報を抽出:")
+    print(f"  購入番号: {reservation['購入番号']}")
+    print(f"  乗車日: {reservation['乗車日']}")
+    print(f"  列車名: {reservation['列車名']}")
+    print(f"  人数（大人）: {reservation['人数（大人）']}")
+    print(f"  人数（小児）: {reservation['人数（小児）']}")
+
     return reservation
 
 def parse_datetime(date_str, time_str):
@@ -165,7 +191,7 @@ def fetch_reservations_by_month(driver, month):
     Raises:
         TimeoutException: ウェブ要素の検索にタイムアウトした場合に発生。
     """
-    print(f"🔎 照会中: {month}")
+    print(f"\n🔎 照会中: {month}")
     try:
         select = Select(WebDriverWait(driver, WAIT_TIME).until(
             EC.presence_of_element_located((By.ID, "useInquiryDate"))
@@ -180,7 +206,9 @@ def fetch_reservations_by_month(driver, month):
         raise TimeoutException(f"月を指定しての予約情報の取得に失敗しました: {month}") from e
 
     reservations = []
+    page = 1
     while True:
+        print(f"\n📄 ページ {page} を処理中...")
         soup = BeautifulSoup(driver.page_source, 'html.parser')
         blocks = soup.select("div.pdg-10")
 
@@ -198,33 +226,43 @@ def fetch_reservations_by_month(driver, month):
                     label = safe_text(item.select_one(".name"))
                     value = safe_text(item.select_one(".value"))
                     if "号車" in label:
-                        current["号車"] = value
+                        current["号車"].append(value)
+                        print(f"  号車: {value}")
                     elif "座席" in label:
-                        current["座席"] = value
+                        current["座席"].append(value)
+                        print(f"  座席: {value}")
 
                 sub_status_divs = block.select(".item.statusArea .status")
                 sub_statuses = [safe_text(s) for s in sub_status_divs]
                 if sub_statuses:
-                    current["ステータス"] = " ".join(sub_statuses)
+                    current["ステータス"].extend(sub_statuses)
+                    print(f"  ステータス更新: {', '.join(sub_statuses)}")
 
             last_block = block
 
-        if current and current["ステータス"] == "" and last_block:
+        if current and not current["ステータス"] and last_block:
             sub_status_divs = last_block.select(".item.statusArea .status")
             sub_statuses = [safe_text(s) for s in sub_status_divs]
             if sub_statuses:
-                current["ステータス"] = " ".join(sub_statuses)
+                current["ステータス"].extend(sub_statuses)
+                print(f"  最終ステータス更新: {', '.join(sub_statuses)}")
 
-        print(f"  -> {len(reservations)} 件取得")
+        print(f"  -> 現在のページで {len(reservations)} 件取得")
 
         try:
             next_link = driver.find_element(By.ID, "next")
             next_url = urljoin(driver.current_url, next_link.get_attribute("href"))
+            print(f"  -> 次のページに移動: {next_url}")
             driver.get(next_url)
             time.sleep(SLEEP_TIME)
+            page += 1
         except NoSuchElementException:
+            print("  -> これ以上のページはありません")
             break
-    return reservations
+
+    # 予約情報を正規化
+    normalized_reservations = [normalize_reservation(r) for r in reservations]
+    return normalized_reservations
 
 def fetch_reservations():
     """
@@ -255,23 +293,18 @@ def fetch_reservations():
             select = Select(select_element)
             months = [option.get_attribute("value") for option in select.options if option.get_attribute("value") != "today"]
             months = [m for m in months if is_recent_month(m)]
-            print(f"📅 対象月: {months}")
 
             all_reservations = []
             for month in months:
                 reservations = fetch_reservations_by_month(driver, month)
                 all_reservations.extend(reservations)
 
-            normalized = [normalize_reservation(r) for r in all_reservations]
-            return normalized
+            return all_reservations
 
         except (ValueError, TimeoutException, WebDriverException) as e:
-            print(f"❌ エラー発生 ({retry + 1}/{RETRY_COUNT}): {e}")
             if retry < RETRY_COUNT - 1:
-                print("🔄 リトライします...")
                 time.sleep(SLEEP_TIME)
             else:
-                print("❌ リトライ回数を超えたため、処理を終了します")
                 return None
 
         finally:
