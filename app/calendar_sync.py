@@ -114,7 +114,11 @@ def extract_target_year_months(reservations):
     months = set()
     for r in reservations:
         try:
-            ride_date = re.sub(r"[年月日（）]", "-", r.get("乗車日", "")).strip("-")
+            ride_date = r.get("乗車日", "")
+            # リストの場合は最初の要素を使用
+            if isinstance(ride_date, list):
+                ride_date = ride_date[0] if ride_date else ""
+            ride_date = re.sub(r"[年月日（）]", "-", ride_date).strip("-")
             parts = ride_date.split("-")
             year_month = f"{parts[0]}/{int(parts[1])}"
             months.add(year_month)
@@ -166,29 +170,66 @@ def extract_event_details(reservation):
     Returns:
         dict: イベントの詳細情報。
     """
-    start = parse_datetime(reservation["乗車日"], reservation["出発時刻"]).astimezone(JST)
-    end = parse_datetime(reservation["乗車日"], reservation["到着時刻"]).astimezone(JST)
-    car = reservation['号車'].replace(" ", "")
-    title = f"{reservation['出発駅']}→{reservation['到着駅']} [{car} {reservation['座席']}]"
-    if "払戻済" in reservation["ステータス"]:
+    ride_date = reservation["乗車日"]
+    # リストの場合は最初の要素を使用
+    if isinstance(ride_date, list):
+        ride_date = ride_date[0] if ride_date else ""
+    start = parse_datetime(ride_date, reservation["出発時刻"]).astimezone(JST)
+    end = parse_datetime(ride_date, reservation["到着時刻"]).astimezone(JST)
+
+    # 号車と座席の処理
+    car = reservation.get("号車", "")
+    if isinstance(car, list):
+        car = ", ".join(sorted(set(car)))  # 重複を除去してソート
+    car = car.replace(" ", "")
+
+    seat = reservation.get("座席", "")
+    if isinstance(seat, list):
+        seat = ", ".join(seat)
+    seat = seat.replace(" ", "")
+
+    # 列車名の処理
+    train_name = reservation.get("列車名", "")
+    if isinstance(train_name, list):
+        train_name = train_name[0]
+    train_name = train_name.replace(" ", "")
+
+    # 出発駅と到着駅の処理
+    departure = reservation.get("出発駅", "")
+    if isinstance(departure, list):
+        departure = departure[0]
+    departure = departure.replace(" ", "")
+
+    arrival = reservation.get("到着駅", "")
+    if isinstance(arrival, list):
+        arrival = arrival[0]
+    arrival = arrival.replace(" ", "")
+
+    # ステータスの処理
+    status = reservation.get("ステータス", [])
+    if isinstance(status, list):
+        status = ", ".join(sorted(set(status)))  # 重複を除去してソート
+
+    title = f"{departure}→{arrival} [{car} {seat}]"
+    if "払戻済" in status:
         title = f"🚫 {title}"
     else:
         title = f"🚆 {title}"
 
     description = (
-        f"列車名: {reservation['列車名']}\n"
+        f"列車名: {train_name}\n"
         f"号車: {car}\n"
-        f"座席: {reservation['座席']}\n"
+        f"座席: {seat}\n"
         f"人数: 大人 {reservation['人数（大人）']} / 小児 {reservation['人数（小児）']}\n"
         f"金額: {reservation['金額']}\n"
-        f"ステータス: {reservation['ステータス']}\n"
+        f"ステータス: {status}\n"
         f"購入番号: {reservation['購入番号']}\n"
     )
 
     return {
         'summary': title,
         'description': description,
-        'location': reservation['出発駅'] + "駅",
+        'location': departure + "駅",
         'start': {'dateTime': start.isoformat(), 'timeZone': 'Asia/Tokyo'},
         'end': {'dateTime': end.isoformat(), 'timeZone': 'Asia/Tokyo'}
     }
@@ -210,7 +251,15 @@ def sync_calendar(reservations, debug=False, clear=True):
             delete_events_in_months(service, calendar_id, target_months)
 
         for i, r in enumerate(reservations):
-            if r.get("ステータス") not in ALLOWED_STATUSES:
+            print(f"\n🔍 予約情報 {i+1} 件目:")
+            print(f"  乗車日: {r.get('乗車日')} (type: {type(r.get('乗車日'))})")
+            print(f"  ステータス: {r.get('ステータス')} (type: {type(r.get('ステータス'))})")
+            # ステータスがリストの場合は最初の要素を使用
+            status = r.get("ステータス", [])
+            if isinstance(status, list):
+                status = status[0] if status else ""
+            if status not in ALLOWED_STATUSES:
+                print(f"  ⏭️ スキップ: ステータス {status} は対象外")
                 continue
             try:
                 event = extract_event_details(r)
