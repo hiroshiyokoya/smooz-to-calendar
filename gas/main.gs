@@ -15,7 +15,10 @@ const Config = {
   SMOOZ_MAIL_QUERY: "from:info@smooz.jp subject:【チケットレスサービス「Smooz」】",
 
   // API設定
-  CLOUD_RUN_URL: "https://YOUR_CLOUD_RUN_URL/fetch_and_update" // 実際のURLに置換してください
+  CLOUD_RUN_URL: "https://YOUR_CLOUD_RUN_URL/fetch_and_update", // 実際のURLに置換してください
+
+  // 実行間隔設定
+  FORCE_RUN_INTERVAL_HOURS: 3 // 強制実行までの時間間隔（時間）
 };
 
 /**
@@ -101,7 +104,7 @@ function checkSmoozMail() {
     const lastRunDate = new Date(parseInt(lastRunTime));
     const now = new Date();
     const hoursSinceLastRun = (now - lastRunDate) / (1000 * 60 * 60);
-    console.log(`最終Cloud Run実行から${Math.floor(hoursSinceLastRun)}時間${Math.floor((hoursSinceLastRun % 1) * 60)}分経過`);
+    console.log(`最終Cloud Run実行日時(${lastRunDate.toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" })})から${Math.floor(hoursSinceLastRun)}時間${Math.floor((hoursSinceLastRun % 1) * 60)}分経過`);
   } else {
     console.log("Cloud Runの実行履歴がありません。初回実行時刻をセットします");
     PropertiesService.getScriptProperties().setProperty("lastCloudRunTime", new Date().getTime().toString());
@@ -127,21 +130,21 @@ function checkSmoozMail() {
     const lastMessage = messages[messages.length - 1];
     const lastMessageDate = lastMessage.getDate();
 
-    // 最後のメッセージが最後の処理時間より新しい場合のみ処理対象に追加
-    if (lastMessageDate > new Date(new Date().getTime() - 3600000)) {
+    // 最後のメッセージが最後のCloud Run実行時間より新しい場合のみ処理対象に追加
+    if (lastRunTime && lastMessageDate > new Date(parseInt(lastRunTime))) {
       console.log("\n更新されたスレッドを検出:");
       console.log(getThreadInfo(thread));
       targetThreads.push(thread);
     }
   }
 
-  // 3. 24時間以上Cloud Runを呼んでいない場合は強制的に呼び出す
+  // 3. Config.FORCE_RUN_INTERVAL_HOURS時間以上Cloud Runを呼んでいない場合は強制的に呼び出す
   if (lastRunTime) {
     const lastRunDate = new Date(parseInt(lastRunTime));
     const now = new Date();
     const hoursSinceLastRun = (now - lastRunDate) / (1000 * 60 * 60);
 
-    if (hoursSinceLastRun >= 24) {
+    if (hoursSinceLastRun >= Config.FORCE_RUN_INTERVAL_HOURS) {
       console.log(`\nCloud Runの最終実行から${Math.floor(hoursSinceLastRun)}時間が経過しています。強制的に実行します。`);
       isForceRun = true;
     }
@@ -149,7 +152,7 @@ function checkSmoozMail() {
 
   // 処理対象がある場合または強制実行の場合にCloud Runを実行
   if (targetThreads.length > 0 || isForceRun) {
-    console.log(`\n${isForceRun ? "24時間経過を検知" : targetThreads.length + "件のスレッドの更新を検知"}`);
+    console.log(`\n${isForceRun ? `${Config.FORCE_RUN_INTERVAL_HOURS}時間経過を検知` : targetThreads.length + "件のスレッドの更新を検知"}`);
 
     try {
       console.log("\nCloud Run へのリクエストを送信...");
