@@ -1,5 +1,32 @@
 # fetch_reservations.py
 
+"""
+Smooz予約サイトから予約情報を取得するスクリプト。
+
+実装関数一覧：
+- get_login_info(): ログイン情報をファイルから読み込む
+- safe_text(): HTML要素から安全にテキストを取得
+- normalize_text(): テキストを正規化
+- normalize_reservation(): 予約情報を正規化
+- is_recent_month(): 指定された値が直近の月かどうかを判定
+- login(): Smoozにログイン
+- navigate_to_purchase_history(): 購入履歴画面に遷移
+- extract_reservation_details(): 予約情報の詳細を抽出
+- parse_datetime(): 日付と時刻の文字列からdatetimeオブジェクトを生成
+- fetch_reservations_by_month(): 月を指定して予約情報を取得
+- fetch_reservations(): 予約情報を取得
+- save_reservations(): 予約情報をファイルに保存
+
+依存している自作関数一覧：
+- なし
+
+依存している外部パッケージ：
+- selenium: Webスクレイピング
+- beautifulsoup4: HTMLパース
+- jaconv: 文字列正規化
+- pytz: タイムゾーン処理
+"""
+
 import time
 import json
 import jaconv
