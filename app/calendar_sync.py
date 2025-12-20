@@ -1,5 +1,28 @@
 # calendar_sync.py
 
+"""
+Googleカレンダーに予約情報を同期するスクリプト。
+
+実装関数一覧：
+- send_error_notification(): エラーメッセージをGmailで送信
+- authorize_google_calendar(): Google Calendar APIへのアクセスを認証
+- get_calendar_id_by_name(): 指定された名前のカレンダーのIDを取得
+- extract_target_year_months(): 予約情報から対象となる年月を抽出
+- delete_events_in_months(): 指定された年月に対応するカレンダー内のイベントを削除
+- extract_event_details(): 予約情報からイベントの詳細を抽出
+- sync_calendar(): 予約情報をGoogleカレンダーに同期
+
+依存している自作関数一覧：
+- fetch_reservations.py: parse_datetime()
+- authorize_once.py: load_credentials(), authorize(), save_credentials()
+
+依存している外部パッケージ：
+- google-auth-oauthlib: Google OAuth認証
+- google-auth-httplib2: Google API認証
+- google-api-python-client: Google APIクライアント
+- pytz: タイムゾーン処理
+"""
+
 import os
 import sys
 import json
@@ -8,7 +31,7 @@ import re
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from google.auth.transport.requests import Request
-from fetch_reservations import parse_datetime #修正
+from fetch_reservations import parse_datetime
 from pytz import timezone
 from authorize_once import load_credentials, authorize, save_credentials
 from email.mime.text import MIMEText
@@ -20,7 +43,7 @@ CALENDAR_NAME = "Smooz"
 SCOPES = ['https://www.googleapis.com/auth/calendar']
 ALLOWED_STATUSES = {"購入済", "運休払戻済", "乗車変更購入済"}
 JST = timezone('Asia/Tokyo')
-NOTIFICATION_EMAIL = 'hyokoya@gmail.com'  # エラー通知の送信先メールアドレス
+NOTIFICATION_EMAIL = os.getenv('NOTIFICATION_EMAIL', 'hyokoya@gmail.com')  # 環境変数から取得
 
 def send_error_notification(error_message):
     """エラーメッセージをGmailで送信する。
