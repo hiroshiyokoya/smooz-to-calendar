@@ -112,23 +112,64 @@
 
 ## Cloud Run デプロイ手順
 
+Container Registry(`gcr.io`)は2025-03に終了しているため、Artifact Registry(`*-docker.pkg.dev`)を使用します。
+
+### 推奨(スクリプト実行)
+
+```bash
+./deploy.sh
+```
+
+### 手動(コマンド)
+
 1. 必要なAPIを有効化
-    ```bash
-    gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com
-    ```
-2. イメージをビルドしてGCPにpush
-    ```bash
-    gcloud builds submit --tag gcr.io/$(gcloud config get-value project)/smooz-runner
-    ```
-3. Cloud Run にデプロイ（1GiBメモリ、認証あり）
-    ```bash
-    gcloud run deploy smooz-runner \
-      --image gcr.io/$(gcloud config get-value project)/smooz-runner \
-      --platform managed \
-      --region asia-northeast1 \
-      --memory 1Gi \
-      --allow-unauthenticated
-    ```
+
+```bash
+gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com
+```
+
+2. Artifact Registryリポジトリを作成(初回のみ)
+
+```bash
+REGION=asia-northeast1
+REPO=smooz-sync
+gcloud artifacts repositories create "${REPO}" --repository-format=docker --location "${REGION}"
+```
+
+3. イメージをビルドしてArtifact Registryにpush
+
+```bash
+PROJECT_ID="$(gcloud config get-value project)"
+REGION=asia-northeast1
+REPO=smooz-sync
+SERVICE=smooz-runner
+TAG="$(date +%Y%m%d-%H%M%S)"
+
+IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO}/${SERVICE}:${TAG}"
+gcloud builds submit --tag "${IMAGE}"
+gcloud artifacts docker tags add "${IMAGE}" "${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO}/${SERVICE}:latest"
+```
+
+4. Cloud Run にデプロイ(1GiBメモリ、認証なし)
+
+```bash
+gcloud run deploy smooz-runner \
+  --image "${IMAGE}" \
+  --platform managed \
+  --region asia-northeast1 \
+  --memory 1Gi \
+  --allow-unauthenticated \
+  --set-env-vars="PYTHONUNBUFFERED=1"
+```
+
+### 古いリビジョンとイメージのクリーンアップ
+
+他プロジェクトで失敗していたパターン(古い`gcloud container images ...`の使用)を避けるため、Cloud Runの古いリビジョンを削除し、そのリビジョンが参照していたイメージ削除を試行します。
+
+```bash
+# 直近10個の非トラフィックリビジョンを残して削除
+KEEP_REVISIONS=10 ./cleanup.sh
+```
 
 ---
 
