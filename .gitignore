@@ -4,6 +4,7 @@ credentials.json
 token.json
 app/_credentials.json
 app/reservations.json
+.cursorrules
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
