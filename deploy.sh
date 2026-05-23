@@ -54,4 +54,7 @@ gcloud run deploy "${SERVICE_NAME}" \
 
 echo "✅ デプロイが完了しました！"
 echo "🌐 サービスのURL: $(gcloud run services describe "${SERVICE_NAME}" --region "${REGION}" --format 'value(status.url)')"
-echo "🧹 クリーンアップは ./cleanup.sh を実行してください"
+
+echo ""
+echo "🧹 古いリビジョンとイメージをクリーンアップします..."
+KEEP_REVISIONS="${KEEP_REVISIONS:-0}" KEEP_IMAGE_TAGS="${KEEP_IMAGE_TAGS:-0}" "$(dirname "$0")/cleanup.sh"
