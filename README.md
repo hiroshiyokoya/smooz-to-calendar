@@ -131,11 +131,33 @@ Container Registry(`gcr.io`)は2025-03に終了しているため、Artifact Reg
 ./deploy.sh
 ```
 
-デプロイ完了時に表示される URL を、GASの `gas/main.gs` の `CLOUD_RUN_URL` に設定してください。
+デプロイ完了時に `deploy.sh` が表示する URL を、**Google Apps Script エディタ上の** `Config.CLOUD_RUN_URL` にだけ設定してください(publicリポジトリの `gas/main.gs` には本番URLをコミットしない)。
 
-```text
-https://<cloud-run-url>/fetch_and_update
+### Cloud Run URLの確認方法
+
+本番URLはリポジトリに含めません。次のいずれかで確認し、GASでは `https://<確認したホスト>/fetch_and_update` の形式で設定します。
+
+1. **デプロイ直後(推奨)**
+
+```bash
+./deploy.sh
+# 末尾に表示される「GASエディタの Config.CLOUD_RUN_URL に次を設定」を参照
 ```
+
+2. **gcloud**
+
+```bash
+gcloud run services describe smooz-runner \
+  --project=smooz-calendar \
+  --region=asia-northeast1 \
+  --format='value(status.url)'
+```
+
+表示された URL の末尾に `/fetch_and_update` を付けたものが `CLOUD_RUN_URL` です。
+
+3. **Google Cloud Console**
+
+[Cloud Run](https://console.cloud.google.com/run) でプロジェクト **`smooz-calendar`** を選択し、サービス **`smooz-runner`** の URL を確認します。
 
 ### 手動(コマンド)
 
@@ -271,7 +293,7 @@ Gmailの新着メールを監視し、Smoozからのメールを検出した際�
 `gas/main.gs` の `Config` オブジェクトで以下の設定を変更できます：
 - `LABEL_NAME`: Smoozメールに付与するラベル名
 - `SMOOZ_MAIL_QUERY`: Smoozメールを検出するためのGmail検索クエリ
-- `CLOUD_RUN_URL`: Cloud RunのエンドポイントURL
+- `CLOUD_RUN_URL`: Cloud RunのエンドポイントURL (`https://YOUR_CLOUD_RUN_URL/fetch_and_update`)。**本番URLはGASエディタでのみ設定**し、リポジトリには書かない
 - `FORCE_RUN_INTERVAL_HOURS`: 強制実行までの時間間隔（時間）
 - `SKIP_START_HOUR`: Gmailチェックをスキップする開始時刻（時、デフォルト: 2）
 - `SKIP_END_HOUR`: Gmailチェックをスキップする終了時刻（時、デフォルト: 6）
@@ -323,7 +345,7 @@ function resetLastThreadId() {
 ### 使用方法
 1. 上記スクリプトをGoogle Apps Scriptに貼り付け
 2. トリガーとして `checkSmoozMail` を**5分おき**に設定（1分おきはGmail APIの制限に達する可能性があります）
-3. `YOUR_CLOUD_RUN_URL` を実際のCloud Runエンドポイントに置換
+3. `Config.CLOUD_RUN_URL` が本番 URL になっていることを確認(リポジトリの `gas/main.gs` を参照)
 4. 初回は `resetLastThreadId()` を実行
 
 > 補足：Cloud Runのエンドポイントは `--allow-unauthenticated` オプション付きでデプロイしてください。

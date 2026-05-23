@@ -61,7 +61,7 @@ SERVICE_URL="$(gcloud run services describe "${SERVICE_NAME}" \
 
 echo "✅ デプロイが完了しました！"
 echo "🌐 サービスのURL: ${SERVICE_URL}"
-echo "📎 GASの CLOUD_RUN_URL を次に更新してください:"
+echo "📎 GASエディタの Config.CLOUD_RUN_URL に次を設定してください(リポジトリには書かない):"
 echo "   ${SERVICE_URL}/fetch_and_update"
 
 echo ""
