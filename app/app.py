@@ -4,20 +4,23 @@
 Smooz予約情報を取得し、Googleカレンダーに同期するFlaskアプリケーション。
 
 実装関数一覧：
-- health_check(): ヘルスチェック用のルート
+- health_check(): liveness 用の軽量ルート
+- healthz(): 依存関係(chromium / login.txt / Google認証情報)をチェックする readiness ルート
 - run(): 予約情報の取得とカレンダーへの同期を行うメイン処理
 - fetch_and_update(): Gmailトリガーによる予約情報の取得と同期
-- list_files(): カレントディレクトリ内のファイル一覧を取得
 
 依存している自作関数一覧：
-- fetch_reservations.py: fetch_reservations()
+- fetch_reservations.py: fetch_reservations(), LOGIN_FILE
 - calendar_sync.py: sync_calendar()
+- authorize_once.py: load_credentials()
 """
 
 import os
-from flask import Flask, request, jsonify
-from fetch_reservations import fetch_reservations
+import shutil
+from flask import Flask, jsonify
+from fetch_reservations import fetch_reservations, LOGIN_FILE
 from calendar_sync import sync_calendar
+from authorize_once import load_credentials
 
 app = Flask(__name__)
 
@@ -25,6 +28,7 @@ app = Flask(__name__)
 HEALTH_CHECK_MESSAGE = "Smooz fetcher is running."
 SUCCESS_MESSAGE = "Success"
 GMAIL_TRIGGER_MESSAGE = "Triggered by Gmail"
+CHROME_BIN = os.environ.get("CHROME_BIN", "/usr/bin/chromium")
 
 def handle_reservations_and_sync():
     """予約情報の取得とカレンダーへの同期を行う共通処理。
@@ -61,13 +65,59 @@ def handle_error(e):
 @app.route("/", methods=["GET"])
 def health_check():
     """
-    ヘルスチェック用のルート。
+    Liveness 用の軽量ヘルスチェック。プロセスが応答できるかだけを確認する。
 
     Returns:
         str: "Smooz fetcher is running." というメッセージ
         int: HTTPステータスコード 200 (OK)
     """
     return HEALTH_CHECK_MESSAGE, 200
+
+
+def _check_chromium():
+    path = shutil.which(CHROME_BIN) or (CHROME_BIN if os.path.isfile(CHROME_BIN) else None)
+    if path:
+        return {"ok": True, "path": path}
+    return {"ok": False, "error": f"chromium binary not found at {CHROME_BIN}"}
+
+
+def _check_login_file():
+    if not os.path.isfile(LOGIN_FILE):
+        return {"ok": False, "error": f"{LOGIN_FILE} not found"}
+    return {"ok": True}
+
+
+def _check_google_credentials():
+    try:
+        creds = load_credentials()
+    except Exception as e:
+        return {"ok": False, "error": f"failed to load credentials: {e}"}
+    if creds is None:
+        return {"ok": False, "error": "token.json not found"}
+    if creds.valid:
+        return {"ok": True, "status": "valid"}
+    if creds.expired and creds.refresh_token:
+        return {"ok": True, "status": "expired-but-refreshable"}
+    return {"ok": False, "error": "credentials are invalid and not refreshable"}
+
+
+@app.route("/healthz", methods=["GET"])
+def healthz():
+    """
+    Readiness 用の詳細ヘルスチェック。chromium / ログイン情報 / Google認証情報を確認する。
+
+    Returns:
+        json: 各依存の状態を含む JSON
+        int: すべて OK なら 200、いずれか NG なら 503
+    """
+    checks = {
+        "chromium": _check_chromium(),
+        "login_file": _check_login_file(),
+        "google_credentials": _check_google_credentials(),
+    }
+    all_ok = all(c["ok"] for c in checks.values())
+    status_code = 200 if all_ok else 503
+    return jsonify({"status": "ok" if all_ok else "degraded", "checks": checks}), status_code
 
 @app.route("/run", methods=["POST"])
 def run():
@@ -102,14 +152,3 @@ def fetch_and_update():
         print(f"❌ Gmailトリガー中にエラー発生: {e}")
         return handle_error(e)
 
-@app.route("/files", methods=["GET"])
-def list_files():
-    """
-    カレントディレクトリ内のファイル一覧を取得して表示するルート。
-
-    Returns:
-        json: カレントディレクトリ内のファイル名一覧
-        int: HTTPステータスコード 200 (OK)
-    """
-    files = os.listdir(".")  # カレントディレクトリ
-    return jsonify({"files": files}), 200
