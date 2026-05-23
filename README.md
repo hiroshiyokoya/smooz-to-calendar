@@ -164,11 +164,16 @@ gcloud run deploy smooz-runner \
 
 ### 古いリビジョンとイメージのクリーンアップ
 
-他プロジェクトで失敗していたパターン(古い`gcloud container images ...`の使用)を避けるため、Cloud Runの古いリビジョンを削除し、そのリビジョンが参照していたイメージ削除を試行します。
+`deploy.sh` 実行後に自動で `cleanup.sh` を呼び出します(デフォルト: 非トラフィックの旧リビジョンと、未参照のARイメージを削除)。
+
+手動実行する場合:
 
 ```bash
-# 直近10個の非トラフィックリビジョンを残して削除
-KEEP_REVISIONS=10 ./cleanup.sh
+# 非トラフィックの旧リビジョンと未参照イメージをすべて削除
+./cleanup.sh
+
+# ロールバック用に旧リビジョンと未参照イメージを1つずつ残す
+KEEP_REVISIONS=1 KEEP_IMAGE_TAGS=1 ./cleanup.sh
 ```
 
 ---
