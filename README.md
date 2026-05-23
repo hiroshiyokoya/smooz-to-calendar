@@ -112,7 +112,18 @@
 
 ## Cloud Run デプロイ手順
 
-Container Registry(`gcr.io`)は2025-03に終了しているため、Artifact Registry(`*-docker.pkg.dev`)を使用します。
+### GCPプロジェクト
+
+| 用途 | プロジェクトID |
+|------|----------------|
+| Cloud Run / Artifact Registry / Cloud Build | **`smooz-calendar`** |
+| Google Calendar / Gmail OAuth (`credentials.json`) | **`smooz-calendar`** |
+
+`deploy.sh` と `cleanup.sh` は **`smooz-calendar` に固定**しています。`gcloud config` のプロジェクトが別でも、スクリプト内の `--project` で正しいプロジェクトにデプロイされます。
+
+別プロジェクトへ上書きする場合のみ `GCP_PROJECT_ID=... ./deploy.sh` を使います。
+
+Container Registry(`gcr.io`)は2025-03に終了しているため、Artifact Registry(`asia-northeast1-docker.pkg.dev/...`)を使用します。
 
 ### 推奨(スクリプト実行)
 
@@ -120,34 +131,43 @@ Container Registry(`gcr.io`)は2025-03に終了しているため、Artifact Reg
 ./deploy.sh
 ```
 
+デプロイ完了時に表示される URL を、GASの `gas/main.gs` の `CLOUD_RUN_URL` に設定してください。
+
+```text
+https://<cloud-run-url>/fetch_and_update
+```
+
 ### 手動(コマンド)
 
 1. 必要なAPIを有効化
 
 ```bash
-gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com
+gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com \
+  --project=smooz-calendar
 ```
 
 2. Artifact Registryリポジトリを作成(初回のみ)
 
 ```bash
-REGION=asia-northeast1
-REPO=smooz-sync
-gcloud artifacts repositories create "${REPO}" --repository-format=docker --location "${REGION}"
+gcloud artifacts repositories create smooz-sync \
+  --repository-format=docker \
+  --location=asia-northeast1 \
+  --project=smooz-calendar
 ```
 
 3. イメージをビルドしてArtifact Registryにpush
 
 ```bash
-PROJECT_ID="$(gcloud config get-value project)"
 REGION=asia-northeast1
+PROJECT_ID=smooz-calendar
 REPO=smooz-sync
 SERVICE=smooz-runner
 TAG="$(date +%Y%m%d-%H%M%S)"
 
 IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO}/${SERVICE}:${TAG}"
-gcloud builds submit --tag "${IMAGE}"
-gcloud artifacts docker tags add "${IMAGE}" "${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO}/${SERVICE}:latest"
+gcloud builds submit --tag "${IMAGE}" --project="${PROJECT_ID}"
+gcloud artifacts docker tags add "${IMAGE}" "${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO}/${SERVICE}:latest" \
+  --project="${PROJECT_ID}"
 ```
 
 4. Cloud Run にデプロイ(1GiBメモリ、認証なし)
@@ -159,7 +179,8 @@ gcloud run deploy smooz-runner \
   --region asia-northeast1 \
   --memory 1Gi \
   --allow-unauthenticated \
-  --set-env-vars="PYTHONUNBUFFERED=1"
+  --set-env-vars="PYTHONUNBUFFERED=1" \
+  --project=smooz-calendar
 ```
 
 ### 古いリビジョンとイメージのクリーンアップ
@@ -174,7 +195,14 @@ gcloud run deploy smooz-runner \
 
 # ロールバック用に旧リビジョンと未参照イメージを1つずつ残す
 KEEP_REVISIONS=1 KEEP_IMAGE_TAGS=1 ./cleanup.sh
+
+# 移行前の gcr.io/smooz-calendar/smooz-runner も削除する場合
+CLEANUP_LEGACY_GCR=1 ./cleanup.sh
 ```
+
+### twitter-link-462406 から移行した場合
+
+以前 `twitter-link-462406` にデプロイしていた場合、本番は `smooz-calendar` 側の Cloud Run に切り替えます。GASの URL を更新したあと、`twitter-link` 側の `smooz-runner` は手動で削除して構いません(`twitter-to-notion` など他サービスはそのまま残します)。
 
 ---
 
