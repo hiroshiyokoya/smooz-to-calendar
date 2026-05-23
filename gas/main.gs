@@ -15,7 +15,8 @@ const Config = {
   SMOOZ_MAIL_QUERY: "from:info@smooz.jp subject:【チケットレスサービス「Smooz」】",
 
   // API設定
-  CLOUD_RUN_URL: "https://YOUR_CLOUD_RUN_URL/fetch_and_update", // 実際のURLに置換してください
+  // 本番URLはGASエディタでのみ設定(publicリポジトリに書かない)。確認方法は README.md の「Cloud Run URLの確認方法」
+  CLOUD_RUN_URL: "https://YOUR_CLOUD_RUN_URL/fetch_and_update",
 
   // 実行間隔設定
   FORCE_RUN_INTERVAL_HOURS: 3, // 強制実行までの時間間隔（時間）
