@@ -112,7 +112,18 @@
 
 ## Cloud Run デプロイ手順
 
-Container Registry(`gcr.io`)は2025-03に終了しているため、Artifact Registry(`*-docker.pkg.dev`)を使用します。
+### GCPプロジェクト
+
+| 用途 | プロジェクトID |
+|------|----------------|
+| Cloud Run / Artifact Registry / Cloud Build | **`smooz-calendar`** |
+| Google Calendar / Gmail OAuth (`credentials.json`) | **`smooz-calendar`** |
+
+`deploy.sh` と `cleanup.sh` は **`smooz-calendar` に固定**しています。`gcloud config` のプロジェクトが別でも、スクリプト内の `--project` で正しいプロジェクトにデプロイされます。
+
+別プロジェクトへ上書きする場合のみ `GCP_PROJECT_ID=... ./deploy.sh` を使います。
+
+Container Registry(`gcr.io`)は2025-03に終了しているため、Artifact Registry(`asia-northeast1-docker.pkg.dev/...`)を使用します。
 
 ### 推奨(スクリプト実行)
 
@@ -120,34 +131,65 @@ Container Registry(`gcr.io`)は2025-03に終了しているため、Artifact Reg
 ./deploy.sh
 ```
 
+デプロイ完了時に `deploy.sh` が表示する URL を、**Google Apps Script エディタ上の** `Config.CLOUD_RUN_URL` にだけ設定してください(publicリポジトリの `gas/main.gs` には本番URLをコミットしない)。
+
+### Cloud Run URLの確認方法
+
+本番URLはリポジトリに含めません。次のいずれかで確認し、GASでは `https://<確認したホスト>/fetch_and_update` の形式で設定します。
+
+1. **デプロイ直後(推奨)**
+
+```bash
+./deploy.sh
+# 末尾に表示される「GASエディタの Config.CLOUD_RUN_URL に次を設定」を参照
+```
+
+2. **gcloud**
+
+```bash
+gcloud run services describe smooz-runner \
+  --project=smooz-calendar \
+  --region=asia-northeast1 \
+  --format='value(status.url)'
+```
+
+表示された URL の末尾に `/fetch_and_update` を付けたものが `CLOUD_RUN_URL` です。
+
+3. **Google Cloud Console**
+
+[Cloud Run](https://console.cloud.google.com/run) でプロジェクト **`smooz-calendar`** を選択し、サービス **`smooz-runner`** の URL を確認します。
+
 ### 手動(コマンド)
 
 1. 必要なAPIを有効化
 
 ```bash
-gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com
+gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com \
+  --project=smooz-calendar
 ```
 
 2. Artifact Registryリポジトリを作成(初回のみ)
 
 ```bash
-REGION=asia-northeast1
-REPO=smooz-sync
-gcloud artifacts repositories create "${REPO}" --repository-format=docker --location "${REGION}"
+gcloud artifacts repositories create smooz-sync \
+  --repository-format=docker \
+  --location=asia-northeast1 \
+  --project=smooz-calendar
 ```
 
 3. イメージをビルドしてArtifact Registryにpush
 
 ```bash
-PROJECT_ID="$(gcloud config get-value project)"
 REGION=asia-northeast1
+PROJECT_ID=smooz-calendar
 REPO=smooz-sync
 SERVICE=smooz-runner
 TAG="$(date +%Y%m%d-%H%M%S)"
 
 IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO}/${SERVICE}:${TAG}"
-gcloud builds submit --tag "${IMAGE}"
-gcloud artifacts docker tags add "${IMAGE}" "${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO}/${SERVICE}:latest"
+gcloud builds submit --tag "${IMAGE}" --project="${PROJECT_ID}"
+gcloud artifacts docker tags add "${IMAGE}" "${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO}/${SERVICE}:latest" \
+  --project="${PROJECT_ID}"
 ```
 
 4. Cloud Run にデプロイ(1GiBメモリ、認証なし)
@@ -159,17 +201,30 @@ gcloud run deploy smooz-runner \
   --region asia-northeast1 \
   --memory 1Gi \
   --allow-unauthenticated \
-  --set-env-vars="PYTHONUNBUFFERED=1"
+  --set-env-vars="PYTHONUNBUFFERED=1" \
+  --project=smooz-calendar
 ```
 
 ### 古いリビジョンとイメージのクリーンアップ
 
-他プロジェクトで失敗していたパターン(古い`gcloud container images ...`の使用)を避けるため、Cloud Runの古いリビジョンを削除し、そのリビジョンが参照していたイメージ削除を試行します。
+`deploy.sh` 実行後に自動で `cleanup.sh` を呼び出します(デフォルト: 非トラフィックの旧リビジョンと、未参照のARイメージを削除)。
+
+手動実行する場合:
 
 ```bash
-# 直近10個の非トラフィックリビジョンを残して削除
-KEEP_REVISIONS=10 ./cleanup.sh
+# 非トラフィックの旧リビジョンと未参照イメージをすべて削除
+./cleanup.sh
+
+# ロールバック用に旧リビジョンと未参照イメージを1つずつ残す
+KEEP_REVISIONS=1 KEEP_IMAGE_TAGS=1 ./cleanup.sh
+
+# 移行前の gcr.io/smooz-calendar/smooz-runner も削除する場合
+CLEANUP_LEGACY_GCR=1 ./cleanup.sh
 ```
+
+### twitter-link-462406 から移行した場合
+
+以前 `twitter-link-462406` にデプロイしていた場合、本番は `smooz-calendar` 側の Cloud Run に切り替えます。GASの URL を更新したあと、`twitter-link` 側の `smooz-runner` は手動で削除して構いません(`twitter-to-notion` など他サービスはそのまま残します)。
 
 ---
 
@@ -238,7 +293,7 @@ Gmailの新着メールを監視し、Smoozからのメールを検出した際�
 `gas/main.gs` の `Config` オブジェクトで以下の設定を変更できます：
 - `LABEL_NAME`: Smoozメールに付与するラベル名
 - `SMOOZ_MAIL_QUERY`: Smoozメールを検出するためのGmail検索クエリ
-- `CLOUD_RUN_URL`: Cloud RunのエンドポイントURL
+- `CLOUD_RUN_URL`: Cloud RunのエンドポイントURL (`https://YOUR_CLOUD_RUN_URL/fetch_and_update`)。**本番URLはGASエディタでのみ設定**し、リポジトリには書かない
 - `FORCE_RUN_INTERVAL_HOURS`: 強制実行までの時間間隔（時間）
 - `SKIP_START_HOUR`: Gmailチェックをスキップする開始時刻（時、デフォルト: 2）
 - `SKIP_END_HOUR`: Gmailチェックをスキップする終了時刻（時、デフォルト: 6）
@@ -290,7 +345,7 @@ function resetLastThreadId() {
 ### 使用方法
 1. 上記スクリプトをGoogle Apps Scriptに貼り付け
 2. トリガーとして `checkSmoozMail` を**5分おき**に設定（1分おきはGmail APIの制限に達する可能性があります）
-3. `YOUR_CLOUD_RUN_URL` を実際のCloud Runエンドポイントに置換
+3. `Config.CLOUD_RUN_URL` が本番 URL になっていることを確認(リポジトリの `gas/main.gs` を参照)
 4. 初回は `resetLastThreadId()` を実行
 
 > 補足：Cloud Runのエンドポイントは `--allow-unauthenticated` オプション付きでデプロイしてください。

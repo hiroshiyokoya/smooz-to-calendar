@@ -1,26 +1,37 @@
 #!/bin/bash
 
-# Cloud Runの古いリビジョンと、対応するArtifact Registryのイメージを掃除する。
-# 2025以降はContainer Registry(gcr.io)が終了しているため、gcloud container images系ではなくArtifact Registryを使う。
+# Cloud Runの古いリビジョンと、Artifact Registryの未参照イメージを掃除する。
+# デフォルトプロジェクト: smooz-calendar
 
 set -euo pipefail
 
-PROJECT_ID="$(gcloud config get-value project)"
-REGION="$(gcloud config get-value run/region)"
+GCP_PROJECT_ID="${GCP_PROJECT_ID:-smooz-calendar}"
+GCLOUD_PROJECT=(--project="${GCP_PROJECT_ID}")
+
+REGION="$(gcloud config get-value run/region "${GCLOUD_PROJECT[@]}" 2>/dev/null)"
 if [ -z "$REGION" ] || [ "$REGION" = "(unset)" ]; then
   REGION="asia-northeast1"
 fi
 
 SERVICE_NAME="${SERVICE_NAME:-smooz-runner}"
-KEEP_REVISIONS="${KEEP_REVISIONS:-10}"
+AR_REPOSITORY="${AR_REPOSITORY:-smooz-sync}"
+IMAGE_BASE="${REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${AR_REPOSITORY}/${SERVICE_NAME}"
+
+KEEP_REVISIONS="${KEEP_REVISIONS:-1}"
+KEEP_IMAGE_TAGS="${KEEP_IMAGE_TAGS:-0}"
 
 echo "🧹 クリーンアップ開始"
-echo "📋 プロジェクト: ${PROJECT_ID}"
+echo "📋 プロジェクト: ${GCP_PROJECT_ID}"
 echo "🌍 リージョン: ${REGION}"
 echo "🛰️ サービス: ${SERVICE_NAME}"
-echo "📌 保持するリビジョン数: ${KEEP_REVISIONS}"
+echo "📦 イメージ: ${IMAGE_BASE}"
+echo "📌 保持する旧リビジョン数(非トラフィック): ${KEEP_REVISIONS}"
+echo "📌 保持する未参照イメージ数: ${KEEP_IMAGE_TAGS}"
 
-traffic_revisions="$(gcloud run services describe "${SERVICE_NAME}" --region "${REGION}" --format='value(status.traffic.revisionName)' | tr '\n' ' ')"
+traffic_revisions="$(
+  gcloud run services describe "${SERVICE_NAME}" --region "${REGION}" \
+    --format='value(status.traffic.revisionName)' "${GCLOUD_PROJECT[@]}" | tr '\n' ' '
+)"
 echo "🚦 トラフィックが流れているリビジョン: ${traffic_revisions:-(なし)}"
 
 revisions="$(
@@ -28,44 +39,113 @@ revisions="$(
     --service "${SERVICE_NAME}" \
     --region "${REGION}" \
     --sort-by="~metadata.creationTimestamp" \
-    --format="value(metadata.name)"
+    --format="value(metadata.name)" \
+    "${GCLOUD_PROJECT[@]}"
 )"
 
-if [ -z "${revisions}" ]; then
+deleted_revisions=0
+if [ -n "${revisions}" ]; then
+  keep=0
+  while IFS= read -r rev; do
+    if [ -z "${rev}" ]; then
+      continue
+    fi
+
+    if echo " ${traffic_revisions} " | grep -q " ${rev} "; then
+      echo "⏭️ スキップ(トラフィックあり): ${rev}"
+      continue
+    fi
+
+    if [ "${keep}" -lt "${KEEP_REVISIONS}" ]; then
+      echo "✅ リビジョン保持: ${rev}"
+      keep=$((keep + 1))
+      continue
+    fi
+
+    echo "🗑️ リビジョン削除: ${rev}"
+    gcloud run revisions delete "${rev}" --region "${REGION}" --quiet "${GCLOUD_PROJECT[@]}"
+    deleted_revisions=$((deleted_revisions + 1))
+  done <<< "${revisions}"
+else
   echo "ℹ️ リビジョンが見つかりませんでした"
-  exit 0
 fi
 
-keep=0
-deleted=0
+echo ""
+echo "=== Artifact Registry の古いイメージ整理 ==="
 
-while IFS= read -r rev; do
-  if [ -z "${rev}" ]; then
-    continue
+protected_digests="$(
+  gcloud run revisions list \
+    --service "${SERVICE_NAME}" \
+    --region "${REGION}" \
+    --format='value(spec.containers[0].image)' \
+    "${GCLOUD_PROJECT[@]}" \
+  | sed -n 's/.*@//p' \
+  | sort -u
+)"
+
+if [ -z "${protected_digests}" ]; then
+  echo "ℹ️ 保護対象のdigestがありません(リビジョン未検出)"
+else
+  echo "🔒 保護するdigest(稼働中リビジョン):"
+  echo "${protected_digests}" | sed 's/^/  /'
+fi
+
+mapfile -t image_lines < <(
+  gcloud artifacts docker images list "${IMAGE_BASE}" \
+    --include-tags \
+    --format='value(version,createTime,tags)' \
+    --sort-by=~create_time \
+    "${GCLOUD_PROJECT[@]}"
+)
+
+deleted_images=0
+if [ "${#image_lines[@]}" -eq 0 ]; then
+  echo "ℹ️ ${IMAGE_BASE} にイメージがありません"
+else
+  orphan_kept=0
+  for line in "${image_lines[@]}"; do
+    digest="${line%%$'\t'*}"
+    rest="${line#*$'\t'}"
+    tags="${rest#*$'\t'}"
+
+    if echo "${protected_digests}" | grep -qx "${digest}"; then
+      echo "🔒 保持(稼働中): ${digest} [${tags}]"
+      continue
+    fi
+
+    if [ "${orphan_kept}" -lt "${KEEP_IMAGE_TAGS}" ]; then
+      echo "✅ 未参照イメージを保持: ${digest} [${tags}]"
+      orphan_kept=$((orphan_kept + 1))
+      continue
+    fi
+
+    ref="${IMAGE_BASE}"
+    if [ -n "${tags}" ] && [ "${tags}" != "None" ]; then
+      first_tag="${tags%%,*}"
+      ref="${IMAGE_BASE}:${first_tag}"
+    else
+      ref="${IMAGE_BASE}@${digest}"
+    fi
+
+    echo "🗑️ イメージ削除: ${ref}"
+    if gcloud artifacts docker images delete "${ref}" --delete-tags --quiet "${GCLOUD_PROJECT[@]}"; then
+      deleted_images=$((deleted_images + 1))
+    else
+      echo "⚠️ 削除に失敗(権限または参照中): ${ref}"
+    fi
+  done
+fi
+
+if [ "${CLEANUP_LEGACY_GCR:-0}" = "1" ]; then
+  echo ""
+  echo "=== 旧 Container Registry (gcr.io) イメージの削除 ==="
+  legacy_ref="gcr.io/${GCP_PROJECT_ID}/${SERVICE_NAME}"
+  if gcloud container images describe "${legacy_ref}" "${GCLOUD_PROJECT[@]}" >/dev/null 2>&1; then
+    echo "🗑️ 旧イメージ削除: ${legacy_ref}"
+    gcloud container images delete "${legacy_ref}" --force-delete-tags --quiet "${GCLOUD_PROJECT[@]}" || true
+  else
+    echo "ℹ️ 旧イメージ ${legacy_ref} は見つかりませんでした"
   fi
+fi
 
-  if echo " ${traffic_revisions} " | grep -q " ${rev} "; then
-    echo "⏭️ スキップ(トラフィックあり): ${rev}"
-    continue
-  fi
-
-  if [ "${keep}" -lt "${KEEP_REVISIONS}" ]; then
-    echo "✅ 保持: ${rev}"
-    keep=$((keep + 1))
-    continue
-  fi
-
-  image="$(gcloud run revisions describe "${rev}" --region "${REGION}" --format='value(spec.containers[0].image)' || true)"
-  echo "🗑️ 削除: ${rev}"
-  gcloud run revisions delete "${rev}" --region "${REGION}" --quiet
-  deleted=$((deleted + 1))
-
-  # リビジョンの参照先イメージも掃除(存在しない/権限不足は無視)
-  if [ -n "${image}" ]; then
-    echo "🧽 イメージ削除を試行: ${image}"
-    gcloud artifacts docker images delete "${image}" --delete-tags --quiet || true
-  fi
-done <<< "${revisions}"
-
-echo "✅ クリーンアップ完了(削除リビジョン数: ${deleted})"
-
+echo "✅ クリーンアップ完了(削除リビジョン数: ${deleted_revisions}, 削除イメージ数: ${deleted_images})"
