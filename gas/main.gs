@@ -17,6 +17,7 @@ const Config = {
   // API設定
   // 本番URLはGASエディタでのみ設定(publicリポジトリに書かない)。確認方法は README.md の「Cloud Run URLの確認方法」
   CLOUD_RUN_URL: "https://YOUR_CLOUD_RUN_URL/fetch_and_update",
+  // サービスアカウントJSONは Script Properties の GCP_SA_KEY に置く(リポジトリに書かない)
 
   // 実行間隔設定
   FORCE_RUN_INTERVAL_HOURS: 3, // 強制実行までの時間間隔（時間）
@@ -131,6 +132,94 @@ function processThreads(threads, label) {
     }
   });
   console.log("=== ラベル付与処理終了 ===\n");
+}
+
+/**
+ * Cloud Run URLから IDトークンの audience(オリジン)を取り出す。
+ *
+ * @param {string} url Cloud RunのエンドポイントURL
+ * @return {string} https://<host>
+ */
+function getCloudRunAudience_(url) {
+  const match = String(url).match(/^(https:\/\/[^/]+)/);
+  if (!match) {
+    throw new Error("CLOUD_RUN_URL が不正です。GASエディタの Config.CLOUD_RUN_URL を確認してください。");
+  }
+  return match[1];
+}
+
+/**
+ * JWT用の Base64URL 文字列を作る。
+ *
+ * @param {string|GoogleAppsScript.Byte[]} data エンコード対象
+ * @return {string} paddingなしの Base64URL
+ */
+function toBase64Url_(data) {
+  return Utilities.base64EncodeWebSafe(data).replace(/=+$/, "");
+}
+
+/**
+ * サービスアカウント鍵で Cloud Run 向け IDトークンを取得する。
+ * 鍵は Script Properties の GCP_SA_KEY に JSON 文字列で置く。
+ *
+ * @param {string} audience Cloud RunサービスのオリジンURL
+ * @return {string} IDトークン
+ */
+function getCloudRunIdToken_(audience) {
+  const raw = PropertiesService.getScriptProperties().getProperty("GCP_SA_KEY");
+  if (!raw) {
+    throw new Error("Script Properties に GCP_SA_KEY がありません。README の手順でサービスアカウント鍵を設定してください。");
+  }
+
+  const sa = JSON.parse(raw);
+  const now = Math.floor(Date.now() / 1000);
+  const header = toBase64Url_(JSON.stringify({ alg: "RS256", typ: "JWT" }));
+  const payload = toBase64Url_(JSON.stringify({
+    iss: sa.client_email,
+    sub: sa.client_email,
+    aud: "https://oauth2.googleapis.com/token",
+    iat: now,
+    exp: now + 3600,
+    target_audience: audience
+  }));
+  const unsigned = `${header}.${payload}`;
+  const signature = toBase64Url_(Utilities.computeRsaSha256Signature(unsigned, sa.private_key));
+  const jwt = `${unsigned}.${signature}`;
+
+  const tokenResponse = UrlFetchApp.fetch("https://oauth2.googleapis.com/token", {
+    method: "post",
+    payload: {
+      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+      assertion: jwt
+    },
+    muteHttpExceptions: true
+  });
+  if (tokenResponse.getResponseCode() !== 200) {
+    throw new Error(`IDトークンの取得に失敗しました: ${tokenResponse.getContentText()}`);
+  }
+
+  const body = JSON.parse(tokenResponse.getContentText());
+  if (!body.id_token) {
+    throw new Error("IDトークンがトークンエンドポイントの応答にありません");
+  }
+  return body.id_token;
+}
+
+/**
+ * 認証付きで Cloud Run の /fetch_and_update を呼び出す。
+ *
+ * @return {GoogleAppsScript.URL_Fetch.HTTPResponse} Cloud Runの応答
+ */
+function callCloudRun_() {
+  const audience = getCloudRunAudience_(Config.CLOUD_RUN_URL);
+  const idToken = getCloudRunIdToken_(audience);
+  return UrlFetchApp.fetch(Config.CLOUD_RUN_URL, {
+    method: "post",
+    muteHttpExceptions: true,
+    headers: {
+      Authorization: `Bearer ${idToken}`
+    }
+  });
 }
 
 /**
@@ -250,10 +339,7 @@ function checkSmoozMail() {
         console.log("\nCloud Run へのリクエストを送信...");
         PropertiesService.getScriptProperties().setProperty("lastCloudRunTime", new Date().getTime().toString());
 
-        const response = UrlFetchApp.fetch(Config.CLOUD_RUN_URL, {
-          method: "post",
-          muteHttpExceptions: true
-        });
+        const response = callCloudRun_();
 
         const responseText = response.getContentText();
         console.log(`Cloud Run レスポンスコード: ${response.getResponseCode()}`);

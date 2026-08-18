@@ -36,7 +36,7 @@ echo "📦 Artifact Registry: ${AR_REPOSITORY}"
 echo "🐳 イメージ: ${IMAGE_NAME}"
 
 echo "🔌 必要なAPIを有効化します..."
-gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com \
+gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com iam.googleapis.com \
   "${GCLOUD_PROJECT[@]}"
 
 if ! gcloud artifacts repositories describe "${AR_REPOSITORY}" \
@@ -62,9 +62,33 @@ gcloud run deploy "${SERVICE_NAME}" \
   --platform managed \
   --region "${REGION}" \
   --memory 1Gi \
-  --allow-unauthenticated \
+  --no-allow-unauthenticated \
   --set-env-vars="PYTHONUNBUFFERED=1" \
   "${GCLOUD_PROJECT[@]}"
+
+INVOKER_SA_NAME="smooz-gas-invoker"
+INVOKER_SA="${INVOKER_SA_NAME}@${GCP_PROJECT_ID}.iam.gserviceaccount.com"
+if ! gcloud iam service-accounts describe "${INVOKER_SA}" "${GCLOUD_PROJECT[@]}" >/dev/null 2>&1; then
+  echo "🔑 GAS呼び出し用サービスアカウントを作成します..."
+  gcloud iam service-accounts create "${INVOKER_SA_NAME}" \
+    --display-name="Smooz GAS Cloud Run invoker" \
+    "${GCLOUD_PROJECT[@]}"
+fi
+
+echo "🔒 Cloud Runの呼び出し権限をサービスアカウントに付与します..."
+gcloud run services add-iam-policy-binding "${SERVICE_NAME}" \
+  --region "${REGION}" \
+  --member="serviceAccount:${INVOKER_SA}" \
+  --role="roles/run.invoker" \
+  --quiet \
+  "${GCLOUD_PROJECT[@]}" >/dev/null
+
+gcloud run services remove-iam-policy-binding "${SERVICE_NAME}" \
+  --region "${REGION}" \
+  --member="allUsers" \
+  --role="roles/run.invoker" \
+  --quiet \
+  "${GCLOUD_PROJECT[@]}" >/dev/null 2>&1 || true
 
 SERVICE_URL="$(gcloud run services describe "${SERVICE_NAME}" \
   --region "${REGION}" \
@@ -75,6 +99,10 @@ echo "✅ デプロイが完了しました！"
 echo "🌐 サービスのURL: ${SERVICE_URL}"
 echo "📎 GASエディタの Config.CLOUD_RUN_URL に次を設定してください(リポジトリには書かない):"
 echo "   ${SERVICE_URL}/fetch_and_update"
+echo "🔑 GASの Script Properties に GCP_SA_KEY を設定してください。"
+echo "   鍵の作成例(ファイルは gitignore 済み。公開しないこと):"
+echo "   gcloud iam service-accounts keys create ./smooz-gas-invoker.json \\"
+echo "     --iam-account=${INVOKER_SA} --project=${GCP_PROJECT_ID}"
 
 echo ""
 echo "🧹 古いリビジョンとイメージをクリーンアップします..."
