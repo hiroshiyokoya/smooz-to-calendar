@@ -1,11 +1,23 @@
 #!/bin/bash
 
 # Cloud Runの古いリビジョンと、Artifact Registryの未参照イメージを掃除する。
-# デフォルトプロジェクト: smooz-calendar
+# GCPプロジェクトIDは公開リポジトリに書かない。ローカルの .gcp.env か環境変数で渡す。
 
 set -euo pipefail
 
-GCP_PROJECT_ID="${GCP_PROJECT_ID:-smooz-calendar}"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+if [ -z "${GCP_PROJECT_ID:-}" ] && [ -f "${SCRIPT_DIR}/.gcp.env" ]; then
+  set -a
+  # shellcheck disable=SC1091
+  . "${SCRIPT_DIR}/.gcp.env"
+  set +a
+fi
+if [ -z "${GCP_PROJECT_ID:-}" ]; then
+  echo "GCP_PROJECT_ID が未設定です。"
+  echo "cp .gcp.env.example .gcp.env してプロジェクトIDを記入するか、環境変数 GCP_PROJECT_ID を渡してください。"
+  echo "プロジェクトIDの確認: gcloud projects list / gcloud config get-value project"
+  exit 1
+fi
 GCLOUD_PROJECT=(--project="${GCP_PROJECT_ID}")
 
 REGION="$(gcloud config get-value run/region "${GCLOUD_PROJECT[@]}" 2>/dev/null)"
