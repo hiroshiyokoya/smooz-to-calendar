@@ -45,9 +45,11 @@
 ├── Dockerfile.dev        # 開発用Docker設定
 ├── compose.yaml          # ローカル開発用Docker Compose構成
 ├── requirements.txt      # Python依存パッケージ一覧
+├── deploy.sh             # Cloud Runデプロイ
+├── cleanup.sh            # 古いリビジョンとイメージの掃除
+├── .gcp.env.example      # GCPプロジェクトIDの記入例(実ファイルはローカルのみ)
 ├── .gcloudignore        # Cloud Build用の除外設定
 ├── .gitignore           # Git用の除外設定
-├── .cursorrules         # Cursor IDE設定
 └── LICENSE              # MITライセンス
 ```
 
@@ -112,24 +114,34 @@
 
 ## Cloud Run デプロイ手順
 
-### GCPプロジェクト
+GCPプロジェクトID、Cloud Run URL、通知先メールなどのアカウント固有の値は **公開リポジトリに書かない**。ローカルの `.gcp.env` と GAS エディタ、実行時の環境変数だけで管理する。
 
-| 用途 | プロジェクトID |
-|------|----------------|
-| Cloud Run / Artifact Registry / Cloud Build | **`smooz-calendar`** |
-| Google Calendar / Gmail OAuth (`credentials.json`) | **`smooz-calendar`** |
+### ローカル設定(`.gcp.env`)
 
-`deploy.sh` と `cleanup.sh` は **`smooz-calendar` に固定**しています。`gcloud config` のプロジェクトが別でも、スクリプト内の `--project` で正しいプロジェクトにデプロイされます。
+```bash
+cp .gcp.env.example .gcp.env
+```
 
-別プロジェクトへ上書きする場合のみ `GCP_PROJECT_ID=... ./deploy.sh` を使います。
+`.gcp.env` に `GCP_PROJECT_ID` を記入する。このファイルは `.gitignore` 済み。
 
-Container Registry(`gcr.io`)は2025-03に終了しているため、Artifact Registry(`asia-northeast1-docker.pkg.dev/...`)を使用します。
+#### GCPプロジェクトIDの確認方法
+
+```bash
+gcloud projects list
+gcloud config get-value project
+```
+
+または [Google Cloud Console](https://console.cloud.google.com/cloud-resource-manager) でプロジェクト一覧を確認する。
+
+Container Registry(`gcr.io`)は2025-03に終了しているため、Artifact Registry(`*-docker.pkg.dev`)を使用します。
 
 ### 推奨(スクリプト実行)
 
 ```bash
 ./deploy.sh
 ```
+
+`deploy.sh` は `.gcp.env` の `GCP_PROJECT_ID` を読みます。環境変数 `GCP_PROJECT_ID` でも上書きできます。
 
 デプロイ完了時に `deploy.sh` が表示する URL を、**Google Apps Script エディタ上の** `Config.CLOUD_RUN_URL` にだけ設定してください(publicリポジトリの `gas/main.gs` には本番URLをコミットしない)。
 
@@ -147,8 +159,10 @@ Container Registry(`gcr.io`)は2025-03に終了しているため、Artifact Reg
 2. **gcloud**
 
 ```bash
+# .gcp.env を読んだうえで実行する例
+set -a && . ./.gcp.env && set +a
 gcloud run services describe smooz-runner \
-  --project=smooz-calendar \
+  --project="${GCP_PROJECT_ID}" \
   --region=asia-northeast1 \
   --format='value(status.url)'
 ```
@@ -157,15 +171,16 @@ gcloud run services describe smooz-runner \
 
 3. **Google Cloud Console**
 
-[Cloud Run](https://console.cloud.google.com/run) でプロジェクト **`smooz-calendar`** を選択し、サービス **`smooz-runner`** の URL を確認します。
+[Cloud Run](https://console.cloud.google.com/run) で対象プロジェクトを選択し、サービス **`smooz-runner`** の URL を確認します。
 
 ### 手動(コマンド)
 
 1. 必要なAPIを有効化
 
 ```bash
+set -a && . ./.gcp.env && set +a
 gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com \
-  --project=smooz-calendar
+  --project="${GCP_PROJECT_ID}"
 ```
 
 2. Artifact Registryリポジトリを作成(初回のみ)
@@ -174,22 +189,21 @@ gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregi
 gcloud artifacts repositories create smooz-sync \
   --repository-format=docker \
   --location=asia-northeast1 \
-  --project=smooz-calendar
+  --project="${GCP_PROJECT_ID}"
 ```
 
 3. イメージをビルドしてArtifact Registryにpush
 
 ```bash
 REGION=asia-northeast1
-PROJECT_ID=smooz-calendar
 REPO=smooz-sync
 SERVICE=smooz-runner
 TAG="$(date +%Y%m%d-%H%M%S)"
 
-IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO}/${SERVICE}:${TAG}"
-gcloud builds submit --tag "${IMAGE}" --project="${PROJECT_ID}"
-gcloud artifacts docker tags add "${IMAGE}" "${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO}/${SERVICE}:latest" \
-  --project="${PROJECT_ID}"
+IMAGE="${REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${REPO}/${SERVICE}:${TAG}"
+gcloud builds submit --tag "${IMAGE}" --project="${GCP_PROJECT_ID}"
+gcloud artifacts docker tags add "${IMAGE}" "${REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${REPO}/${SERVICE}:latest" \
+  --project="${GCP_PROJECT_ID}"
 ```
 
 4. Cloud Run にデプロイ(1GiBメモリ、認証なし)
@@ -202,7 +216,7 @@ gcloud run deploy smooz-runner \
   --memory 1Gi \
   --allow-unauthenticated \
   --set-env-vars="PYTHONUNBUFFERED=1" \
-  --project=smooz-calendar
+  --project="${GCP_PROJECT_ID}"
 ```
 
 ### 古いリビジョンとイメージのクリーンアップ
@@ -218,19 +232,15 @@ gcloud run deploy smooz-runner \
 # ロールバック用に旧リビジョンと未参照イメージを1つずつ残す
 KEEP_REVISIONS=1 KEEP_IMAGE_TAGS=1 ./cleanup.sh
 
-# 移行前の gcr.io/smooz-calendar/smooz-runner も削除する場合
+# 移行前の gcr.io イメージも削除する場合
 CLEANUP_LEGACY_GCR=1 ./cleanup.sh
 ```
-
-### twitter-link-462406 から移行した場合
-
-以前 `twitter-link-462406` にデプロイしていた場合、本番は `smooz-calendar` 側の Cloud Run に切り替えます。GASの URL を更新したあと、`twitter-link` 側の `smooz-runner` は手動で削除して構いません(`twitter-to-notion` など他サービスはそのまま残します)。
 
 ---
 
 ## エラー通知の設定
 
-エラー発生時はGmailで通知が送信されます。通知先メールアドレスは `app/authorize_once.py` の `NOTIFICATION_EMAIL` 変数で設定してください。
+エラー発生時はGmailで通知が送信されます。通知先メールアドレスは環境変数 `NOTIFICATION_EMAIL` で設定してください(公開リポジトリには書かない)。
 
 ### 通知が送信される主なケース
 - Google Calendar APIの認証エラー
@@ -238,12 +248,8 @@ CLEANUP_LEGACY_GCR=1 ./cleanup.sh
 - イベント登録の失敗
 
 ### 設定方法
-1. `app/authorize_once.py` を開く
-2. `NOTIFICATION_EMAIL` 変数を設定
-    ```python
-    NOTIFICATION_EMAIL = 'your-email@example.com'  # 通知先メールアドレス
-    ```
-3. 初回認証を実行
+1. 実行環境に `NOTIFICATION_EMAIL` を設定する(Cloud Run ならサービス環境変数、ローカルならシェルの環境変数)
+2. 初回認証を実行
     ```bash
     python app/authorize_once.py
     ```
@@ -375,7 +381,7 @@ function resetLastThreadId() {
 
 ## 注意事項
 
-- `login.txt`、`credentials.json`、`token.json` は**すべて機密情報**です。
+- `login.txt`、`credentials.json`、`token.json`、`.gcp.env` は**すべて機密情報**です。
   誤ってもGitなどの公開リポジトリにアップロードしないよう、`.gitignore`に必ず追加してください。
 - 初回認証時はブラウザが開き、Googleアカウントでの認証が必要です。
 - 認証トークンは自動的に更新されますが、長期間使用しない場合は再認証が必要になる場合があります。

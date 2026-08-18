@@ -43,7 +43,7 @@ CALENDAR_NAME = "Smooz"
 SCOPES = ['https://www.googleapis.com/auth/calendar']
 ALLOWED_STATUSES = {"購入済", "運休払戻済", "乗車変更購入済"}
 JST = timezone('Asia/Tokyo')
-NOTIFICATION_EMAIL = os.getenv('NOTIFICATION_EMAIL', 'hyokoya@gmail.com')  # 環境変数から取得
+NOTIFICATION_EMAIL = os.getenv('NOTIFICATION_EMAIL', '').strip()
 
 def send_error_notification(error_message):
     """エラーメッセージをGmailで送信する。
@@ -51,6 +51,10 @@ def send_error_notification(error_message):
     Args:
         error_message (str): 送信するエラーメッセージ。
     """
+    if not NOTIFICATION_EMAIL:
+        print("⚠️ NOTIFICATION_EMAIL が未設定のため、エラー通知をスキップします")
+        return
+
     try:
         creds = load_credentials()
         if not creds or not creds.valid:

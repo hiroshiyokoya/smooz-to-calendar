@@ -41,9 +41,10 @@ gh issue create --title "..." --label "..." --body "..."
 # → 出力された URL から Issue 番号を控える
 
 # 2) 直後にトラッキング #17 へ追記する
-gh issue view 17 -R hiroshiyokoya/smooz-to-calendar --json body --jq .body > /tmp/tracking.md
+REPO="$(gh repo view --json nameWithOwner --jq .nameWithOwner)"
+gh issue view 17 -R "${REPO}" --json body --jq .body > /tmp/tracking.md
 # /tmp/tracking.md を編集して該当セクションに「- #<番号> タイトル」を追記
-gh api repos/hiroshiyokoya/smooz-to-calendar/issues/17 -X PATCH -F body=@/tmp/tracking.md
+gh api "repos/${REPO}/issues/17" -X PATCH -F body=@/tmp/tracking.md
 ```
 
 ---
