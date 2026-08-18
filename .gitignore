@@ -6,6 +6,7 @@ app/_credentials.json
 app/reservations.json
 .cursorrules
 .gcp.env
+smooz-gas-invoker.json
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

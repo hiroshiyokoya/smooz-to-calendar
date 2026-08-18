@@ -145,6 +145,29 @@ Container Registry(`gcr.io`)は2025-03に終了しているため、Artifact Reg
 
 デプロイ完了時に `deploy.sh` が表示する URL を、**Google Apps Script エディタ上の** `Config.CLOUD_RUN_URL` にだけ設定してください(publicリポジトリの `gas/main.gs` には本番URLをコミットしない)。
 
+Cloud Run は未認証では呼べません。GAS からはサービスアカウントの IDトークンを付けて呼び出します。
+
+### GASから認証付きで呼ぶ設定
+
+1. デプロイ後に表示されるサービスアカウント向けに、鍵を**ローカルだけ**で作る
+
+```bash
+set -a && . ./.gcp.env && set +a
+gcloud iam service-accounts keys create ./smooz-gas-invoker.json \
+  --iam-account="smooz-gas-invoker@${GCP_PROJECT_ID}.iam.gserviceaccount.com" \
+  --project="${GCP_PROJECT_ID}"
+```
+
+`smooz-gas-invoker.json` は `.gitignore` 済み。Git やチャットに貼らない。
+
+2. Apps Script エディタで「プロジェクトの設定」→「スクリプト プロパティ」に `GCP_SA_KEY` を追加し、JSON ファイルの内容をそのまま貼る
+
+3. `Config.CLOUD_RUN_URL` を本番 URL にする(エディタ上のみ)
+
+4. `checkSmoozMail` を手動実行し、レスポンスコード 200 を確認する
+
+鍵を作り直したら古い鍵は [サービスアカウントの鍵一覧](https://console.cloud.google.com/iam-admin/serviceaccounts) から削除する。
+
 ### Cloud Run URLの確認方法
 
 本番URLはリポジトリに含めません。次のいずれかで確認し、GASでは `https://<確認したホスト>/fetch_and_update` の形式で設定します。
@@ -206,7 +229,7 @@ gcloud artifacts docker tags add "${IMAGE}" "${REGION}-docker.pkg.dev/${GCP_PROJ
   --project="${GCP_PROJECT_ID}"
 ```
 
-4. Cloud Run にデプロイ(1GiBメモリ、認証なし)
+4. Cloud Run にデプロイ(1GiBメモリ、認証必須)
 
 ```bash
 gcloud run deploy smooz-runner \
@@ -214,10 +237,12 @@ gcloud run deploy smooz-runner \
   --platform managed \
   --region asia-northeast1 \
   --memory 1Gi \
-  --allow-unauthenticated \
+  --no-allow-unauthenticated \
   --set-env-vars="PYTHONUNBUFFERED=1" \
   --project="${GCP_PROJECT_ID}"
 ```
+
+続けて、GAS用サービスアカウントに `roles/run.invoker` を付与し、`allUsers` の呼び出し権限があれば外します。`./deploy.sh` がこの手順をまとめて実行します。
 
 ### 古いリビジョンとイメージのクリーンアップ
 
@@ -336,7 +361,8 @@ function checkSmoozMail() {
 
   UrlFetchApp.fetch("https://YOUR_CLOUD_RUN_URL/fetch_and_update", {
     method: "post",
-    muteHttpExceptions: true
+    muteHttpExceptions: true,
+    headers: { Authorization: "Bearer <Cloud Run ID token>" }
   });
 
   PropertiesService.getScriptProperties().setProperty("lastThreadId", latestThread.getId());
@@ -351,10 +377,11 @@ function resetLastThreadId() {
 ### 使用方法
 1. 上記スクリプトをGoogle Apps Scriptに貼り付け
 2. トリガーとして `checkSmoozMail` を**5分おき**に設定（1分おきはGmail APIの制限に達する可能性があります）
-3. `Config.CLOUD_RUN_URL` が本番 URL になっていることを確認(リポジトリの `gas/main.gs` を参照)
-4. 初回は `resetLastThreadId()` を実行
+3. `Config.CLOUD_RUN_URL` を GAS エディタ上で本番 URL にする(リポジトリには書かない)
+4. Script Properties に `GCP_SA_KEY` を設定する
+5. 初回は `resetLastThreadId()` を実行
 
-> 補足：Cloud Runのエンドポイントは `--allow-unauthenticated` オプション付きでデプロイしてください。
+> 補足: Cloud Run は `--no-allow-unauthenticated` でデプロイし、GAS から IDトークン付きで呼び出します。
 
 ---
 
