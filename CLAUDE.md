@@ -1,10 +1,17 @@
 # smooz-to-calendar - Claude作業ルール
 
+> ユーザー全体のルール（`~/.claude/CLAUDE.md`）はクラウドセッション（claude.ai/code）では読み込まれない。
+> このリポジトリで守るべきルールは、クラウドでも効くようにこのファイルに書く。
+
 ## 実装前に構想を確認すること
 
 **ユーザーの発言が提案・ディスカッションなのか、実装依頼なのかを判断すること。**
 
-曖昧な場合は実装を始めず、まず方針を確認する。実装・PRの作成は、ユーザーが「やって」「実装して」「作って」など明示的に依頼したときのみ行う。
+曖昧な場合は実装を始めず、まず方針を確認する。「〜したらどうかな？」「〜って可能？」「〜はどう思う？」のような発言はディスカッションとみなし、合意が取れてから実装に入る。
+
+実装・PRの作成は、ユーザーが「やって」「実装して」「作って」など明示的に依頼したときのみ行う。
+
+関連する小さな変更は 1 つのイシュー・ブランチ・PR にまとめる。マージ後すぐに修正 PR が必要にならないよう、着手前に変更の全体像を把握する。
 
 ---
 
@@ -22,13 +29,16 @@
 | `refactor` | リファクタリング |
 | `infra` | CI/CD・ビルド・デプロイ環境 |
 | `maintenance` | 保守・運用・外部サービス手続き |
+| `documentation` | README などドキュメントのみの変更 |
 | `tracking` | 複数イシューをまとめるトラッキングイシュー |
+
+このリポジトリではマイルストーンは使っていない。進捗はトラッキングイシュー #17 のセクションで管理する。
 
 ### トラッキングイシューを常に最新に保つ
 
 `tracking` ラベルのついたイシュー（現在: **#17**）は Claude が常に最新の状態に保つ。
 
-マイルストーンごとにセクションを分け、完了したイシューも履歴として残す。
+新しいイシューは「今後の課題（issue 運用）」セクションに追記し、完了したイシューも履歴として残す。
 イシューの状態は GitHub が自動で付けるオープン／クローズのマークで判別するため、本文中にアイコンやチェックボックスは付けない。
 
 ### 🚨 `gh issue create` とトラッキング更新は**セットの操作**
@@ -37,14 +47,13 @@
 
 ```bash
 # 1) Issue を立てる
-gh issue create --title "..." --label "..." --body "..."
+gh issue create -R hiroshiyokoya/smooz-to-calendar --title "..." --label "..." --body "..."
 # → 出力された URL から Issue 番号を控える
 
 # 2) 直後にトラッキング #17 へ追記する
-REPO="$(gh repo view --json nameWithOwner --jq .nameWithOwner)"
-gh issue view 17 -R "${REPO}" --json body --jq .body > /tmp/tracking.md
+gh issue view 17 -R hiroshiyokoya/smooz-to-calendar --json body --jq .body > /tmp/tracking.md
 # /tmp/tracking.md を編集して該当セクションに「- #<番号> タイトル」を追記
-gh api "repos/${REPO}/issues/17" -X PATCH -F body=@/tmp/tracking.md
+gh api repos/hiroshiyokoya/smooz-to-calendar/issues/17 -X PATCH -F body=@/tmp/tracking.md
 ```
 
 ---
@@ -52,13 +61,13 @@ gh api "repos/${REPO}/issues/17" -X PATCH -F body=@/tmp/tracking.md
 ## ブランチ・PRのルール
 
 - **既定ブランチ = `develop`（開発本流）／ `main` = リリースブランチ**
-- 通常開発: `issue` → `feature/<番号>-<簡潔な名前>` ブランチ → `PR` → `develop` へマージ
-- 軽微な変更: `develop` への直接コミット OK
+- **どんなに小さな変更でも** `issue` → `feature/<番号>-<簡潔な名前>` ブランチ → `PR` → `develop` へマージ
+- **`develop` への直接コミットは禁止。** ユーザーに「develop に直接でいい」と言われてもブランチ・PR のフローを守る
 - リリース: `develop` → `main` はユーザーが手動でマージ
 
 ### フロー
 
-1. `git checkout develop && git pull` して最新にしてからブランチを切る
+1. `develop` を pull して最新にしてからブランチを切る
 2. `feature/<番号>-<簡潔な名前>` でブランチ作成
 3. 作業・コミット後 `gh pr create --base develop` でPR作成
 4. **PRのマージはユーザーが行う。** Claude は `gh pr merge` を実行しない
@@ -67,4 +76,23 @@ gh api "repos/${REPO}/issues/17" -X PATCH -F body=@/tmp/tracking.md
 
 - PRのタイトルにイシュー番号を含める（例: `feat: 号車情報の正規化 (#18)`）
 - **PR の本文に必ず `Closes #<イシュー番号>` を含める**（マージ時にイシューが自動クローズ）
+- **PR 作成後にコミットを追加したら、PR 本文を最新の変更内容に合わせて更新する**
+- **コミット前に `git branch --show-current` でブランチを確認する。** ユーザーが手元で `develop` に戻していることがある
 - マージ済みのローカルブランチは適宜削除して散らからないようにする
+
+### 🚨 PR / イシューの状態は記憶で語らず、毎回確認する
+
+ユーザーは随時マージしている。「マージ待ち」「未マージ」と報告する前、次の作業に着手する前、既存 PR にコミットを足す前には、必ず現在の状態を確認する。
+
+```bash
+gh pr view <番号> -R hiroshiyokoya/smooz-to-calendar --json state,mergedAt
+```
+
+マージ済みの PR のブランチには追加コミットしない（新しいイシュー＋ブランチ＋PR を立てる）。
+
+---
+
+## クラウドセッション（claude.ai/code）での補足
+
+- `gh` コマンドは使えない。イシュー・PR・トラッキング更新は GitHub 連携ツール（`mcp__github__*`）で**同じ手順・同じルール**で行う。ツールが変わってもイシュー作成とトラッキング追記はセットで実行する。
+- セッションから `claude/...` という作業ブランチ名を指定された場合も、このリポジトリでは `feature/<番号>-<簡潔な名前>` を使ってよい。push が拒否された場合は指定ブランチを使い、PR タイトルの `(#番号)` と本文の `Closes #番号` でイシューと紐付ける。
