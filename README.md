@@ -1,6 +1,6 @@
 # Smooz 自動予約カレンダー登録スクリプト
 
-このリポジトリは、Smooz予約サイトから予約情報を自動取得し、Google Calendarに定期的に登録する仕組みをCloud Run上で動作させることを目的としています。
+このリポジトリは、西武鉄道のチケットレスサービス [Smooz](https://www.smooz.jp/Smooz/top.xhtml) から予約情報を自動取得し、Google Calendarに定期的に登録する仕組みをCloud Run上で動作させることを目的としています。
 
 ---
 
@@ -68,7 +68,7 @@
 - Gmail API
 
 ### 外部サービス
-- Smooz予約サイト
+- [Smooz予約サイト](https://www.smooz.jp/Smooz/top.xhtml)（西武鉄道のチケットレスサービス。サービス概要は[西武鉄道の案内ページ](https://www.seiburailway.jp/railway/reservedtrain/smooz/)を参照）
 - Google Cloud Run
 - Google Apps Script
 
